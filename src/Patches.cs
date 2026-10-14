@@ -1,0 +1,256 @@
+﻿using System;
+using HarmonyLib;
+using RustBuddy;
+using UnityEngine;
+
+[HarmonyPatch(typeof(ConVar.Chat), "sayImpl")]
+public static class RPG_Chat
+{
+    static bool Prefix(ConVar.Chat.ChatChannel __0, ConsoleSystem.Arg __1)
+    {
+        BasePlayer player = null;
+        try { player = UnityEngine.ArgEx.Player(__1); } catch (Exception) { }
+        if (player == null) return true;
+
+        string text = __1.GetString(0, "");
+        if (string.IsNullOrEmpty(text)) return true;
+
+        if (text.StartsWith("!rpg") || text.StartsWith("/rpg"))
+        {
+            PlayerData d = RPG.GetOrCreate(player);
+            RPG.UiOpen.Add(RPG.Id(player));
+            RpgUI.Send(player, d);
+            return false;
+        }
+        if (text.StartsWith("!stats") || text.StartsWith("/stats"))
+        {
+            PlayerData d = RPG.GetOrCreate(player);
+            float maxHp = 100f + RPG.MaxHealthBonus(d);
+            float maxMp = RPG.MaxMana(d);
+            player.ChatMessage("[RustPG] Level " + d.level + " | XP " + (int)d.xp + "/" + (int)RPG.XpForLevel(d.level) + " | Free: " + d.freePoints);
+            player.ChatMessage("[RustPG] STR " + d.str + " | AGI " + d.agi + " | INT " + d.intel);
+            player.ChatMessage("[RustPG] HP " + maxHp + " | Mana " + (int)d.mana + "/" + (int)maxMp);
+            return false;
+        }
+        if (text.StartsWith("!rpgxp"))
+        {
+            if (!player.IsAdmin)
+            {
+                player.ChatMessage("[RustPG] Admin only.");
+                return false;
+            }
+            string[] parts = text.Split(' ');
+            if (parts.Length >= 4 && parts[1] == "give")
+            {
+                BasePlayer target = RPG.FindPlayer(parts[2]);
+                if (target == null) { player.ChatMessage("[RustPG] Player not found."); return false; }
+                float amt;
+                if (!float.TryParse(parts[3], out amt)) { player.ChatMessage("[RustPG] Bad amount."); return false; }
+                PlayerData td = RPG.GetOrCreate(target);
+                RPG.AddXp(target, td, amt);
+                player.ChatMessage("[RustPG] Gave " + amt + " XP to " + target.displayName + ".");
+                return false;
+            }
+            if (parts.Length >= 4 && parts[1] == "take")
+            {
+                BasePlayer target = RPG.FindPlayer(parts[2]);
+                if (target == null) { player.ChatMessage("[RustPG] Player not found."); return false; }
+                float amt;
+                if (!float.TryParse(parts[3], out amt)) { player.ChatMessage("[RustPG] Bad amount."); return false; }
+                PlayerData td = RPG.GetOrCreate(target);
+                RPG.TakeXp(target, td, amt);
+                player.ChatMessage("[RustPG] Took " + amt + " XP from " + target.displayName + ".");
+                return false;
+            }
+            player.ChatMessage("[RustPG] Usage: !rpgxp give/take <name> <amount>");
+            return false;
+        }
+        return true;
+    }
+}
+
+[HarmonyPatch(typeof(ConsoleSystem), "RunWithResult")]
+public static class RPG_Console
+{
+    static bool Prefix(ConsoleSystem.Option __0, string __1, ref ConsoleSystem.CommandResult __result)
+    {
+        if (string.IsNullOrEmpty(__1) || !__1.StartsWith("rpg.")) return true;
+
+        string cmd = __1;
+        string[] parts = cmd.Split(' ');
+        string sub = parts.Length > 1 ? parts[1] : "";
+
+        Network.Connection conn = __0.Connection;
+        BasePlayer player = null;
+        if (conn != null) player = conn.player as BasePlayer;
+
+        if (sub == "add" && player != null)
+        {
+            string stat = parts.Length > 2 ? parts[2] : "";
+            PlayerData d = RPG.GetOrCreate(player);
+            if (RPG.SpendPoint(player, d, stat))
+            {
+                __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "OK", null);
+            }
+            else
+            {
+                __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.PermissionDenied, "Cannot spend point", null);
+            }
+            return false;
+        }
+        if (sub == "close" && player != null)
+        {
+            RPG.UiOpen.Remove(RPG.Id(player));
+            RpgUI.Destroy(player);
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
+            return false;
+        }
+        if (sub == "xp" && (conn == null || conn.authLevel > 0))
+        {
+            string action = parts.Length > 2 ? parts[2] : "";
+            string targetName = parts.Length > 3 ? parts[3] : "";
+            float amt = 0f;
+            if (parts.Length > 4) float.TryParse(parts[4], out amt);
+
+            if (action == "give" || action == "take")
+            {
+                BasePlayer target = RPG.FindPlayer(targetName);
+                if (target == null)
+                {
+                    __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.CommandNotFound, "Player not found", null);
+                    return false;
+                }
+                PlayerData td = RPG.GetOrCreate(target);
+                if (action == "give") RPG.AddXp(target, td, amt);
+                else RPG.TakeXp(target, td, amt);
+                __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "Done", null);
+                return false;
+            }
+        }
+        if (sub == "reset" && (conn == null || conn.authLevel > 0))
+        {
+            string targetName = parts.Length > 2 ? parts[2] : "";
+            BasePlayer target = RPG.FindPlayer(targetName);
+            if (target != null)
+            {
+                PlayerData td = RPG.GetOrCreate(target);
+                td.level = 1; td.xp = 0; td.freePoints = RPG.Config.startingFreePoints;
+                td.str = 0; td.agi = 0; td.intel = 0;
+                td.spentOrder.Clear();
+                RPG.Save(td);
+                RPG.ApplyStats(target, td);
+                if (RPG.UiOpen.Contains(RPG.Id(target))) RpgUI.Send(target, td);
+            }
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "Reset", null);
+            return false;
+        }
+        return true;
+    }
+}
+
+[HarmonyPatch(typeof(BasePlayer), "StartMaxHealth")]
+public static class RPG_MaxHealth
+{
+    static void Postfix(BasePlayer __instance, ref float __result)
+    {
+        if (__instance == null || __instance.IsNpc) return;
+        PlayerData d = RPG.GetOrCreate(__instance);
+        __result += RPG.MaxHealthBonus(d);
+    }
+}
+
+[HarmonyPatch(typeof(BaseCombatEntity), "OnAttacked", new System.Type[] { typeof(HitInfo) })]
+public static class RPG_OnAttacked
+{
+    static void Prefix(BaseCombatEntity __instance, HitInfo hitInfo)
+    {
+        if (hitInfo == null) return;
+
+        BasePlayer attacker = hitInfo.InitiatorPlayer;
+        if (attacker != null && attacker != __instance)
+        {
+            PlayerData ad = RPG.GetOrCreate(attacker);
+            if (hitInfo.Weapon is BaseMelee)
+            {
+                float mult = 1f + ad.str * RPG.Config.meleeDamagePerStr;
+                hitInfo.damageTypes.ScaleAll(mult);
+            }
+            else if (hitInfo.IsProjectile())
+            {
+                float mult = 1f + ad.agi * RPG.Config.rangedDamagePerAgi;
+                hitInfo.damageTypes.ScaleAll(mult);
+            }
+        }
+
+        BasePlayer victim = __instance as BasePlayer;
+        if (victim != null && !victim.IsNpc)
+        {
+            PlayerData vd = RPG.GetOrCreate(victim);
+            float armor = Mathf.Min(RPG.Config.armorCap, vd.agi * RPG.Config.armorPerAgi);
+            if (armor > 0f) hitInfo.damageTypes.ScaleAll(1f - armor);
+        }
+
+        if (attacker != null && __instance is BaseCombatEntity)
+        {
+            RPG.LastAttacker[__instance.net.ID.Value] = attacker;
+        }
+    }
+}
+
+[HarmonyPatch(typeof(ResourceDispenser), "DoGather")]
+public static class RPG_Gather
+{
+    static void Postfix(ResourceDispenser __instance, HitInfo info)
+    {
+        if (info == null) return;
+        BasePlayer p = info.InitiatorPlayer;
+        if (p == null || p.IsNpc) return;
+        PlayerData d = RPG.GetOrCreate(p);
+        RPG.AddXp(p, d, RPG.Config.xpPerGatherHit);
+    }
+}
+
+[HarmonyPatch(typeof(BasePlayer), "OnKilledByPlayer")]
+public static class RPG_PlayerKill
+{
+    static void Postfix(BasePlayer __instance, HitInfo info)
+    {
+        if (info == null) return;
+        BasePlayer killer = info.InitiatorPlayer;
+        if (killer == null || killer == __instance || killer.IsNpc) return;
+        PlayerData d = RPG.GetOrCreate(killer);
+        RPG.AddXp(killer, d, RPG.Config.xpPerPlayerKill);
+    }
+}
+
+[HarmonyPatch(typeof(BaseNpc), "OnKilled")]
+public static class RPG_NpcKill
+{
+    static void Postfix(BaseNpc __instance)
+    {
+        if (__instance == null) return;
+        ulong id = __instance.net.ID.Value;
+        BasePlayer killer;
+        if (!RPG.LastAttacker.TryGetValue(id, out killer)) return;
+        RPG.LastAttacker.Remove(id);
+        if (killer == null || killer.IsNpc) return;
+        PlayerData d = RPG.GetOrCreate(killer);
+        RPG.AddXp(killer, d, RPG.Config.xpPerNpcKill);
+    }
+}
+
+[HarmonyPatch(typeof(PlayerMetabolism), "ServerUpdate")]
+public static class RPG_ManaTick
+{
+    static void Postfix(PlayerMetabolism __instance, BaseCombatEntity entity, float dt)
+    {
+        BasePlayer p = entity as BasePlayer;
+        if (p == null || p.IsNpc) return;
+        PlayerData d = RPG.GetOrCreate(p);
+        float maxMp = RPG.MaxMana(d);
+        if (maxMp <= 0f) return;
+        float regen = (RPG.Config.manaRegenBase + d.intel * RPG.Config.manaRegenPerInt) * dt;
+        d.mana = Mathf.Min(maxMp, d.mana + regen);
+        if (RPG.UiOpen.Contains(RPG.Id(p))) RpgUI.Send(p, d);
+    }
+}
