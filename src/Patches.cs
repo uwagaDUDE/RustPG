@@ -162,23 +162,22 @@ public static class RPG_MaxHealth
 [HarmonyPatch(typeof(BaseCombatEntity), "OnAttacked", new System.Type[] { typeof(HitInfo) })]
 public static class RPG_OnAttacked
 {
-    static void Prefix(BaseCombatEntity __instance, HitInfo hitInfo)
+    static void Prefix(BaseCombatEntity __instance, HitInfo info)
     {
-        if (hitInfo == null) return;
-
-        BasePlayer attacker = hitInfo.InitiatorPlayer;
+        if (info == null) return;
+        BasePlayer attacker = info.InitiatorPlayer;
         if (attacker != null && attacker != __instance)
         {
             PlayerData ad = RPG.GetOrCreate(attacker);
-            if (hitInfo.Weapon is BaseMelee)
+            if (info.Weapon is BaseMelee)
             {
                 float mult = 1f + ad.str * RPG.Config.meleeDamagePerStr;
-                hitInfo.damageTypes.ScaleAll(mult);
+                info.damageTypes.ScaleAll(mult);
             }
-            else if (hitInfo.IsProjectile())
+            else if (info.IsProjectile())
             {
                 float mult = 1f + ad.agi * RPG.Config.rangedDamagePerAgi;
-                hitInfo.damageTypes.ScaleAll(mult);
+                info.damageTypes.ScaleAll(mult);
             }
         }
 
@@ -187,7 +186,7 @@ public static class RPG_OnAttacked
         {
             PlayerData vd = RPG.GetOrCreate(victim);
             float armor = Mathf.Min(RPG.Config.armorCap, vd.agi * RPG.Config.armorPerAgi);
-            if (armor > 0f) hitInfo.damageTypes.ScaleAll(1f - armor);
+            if (armor > 0f) info.damageTypes.ScaleAll(1f - armor);
         }
 
         if (attacker != null && __instance is BaseCombatEntity)
@@ -210,25 +209,27 @@ public static class RPG_Gather
     }
 }
 
-[HarmonyPatch(typeof(BasePlayer), "OnKilledByPlayer")]
+[HarmonyPatch(typeof(BasePlayer), "OnKilledByPlayer", new System.Type[] { typeof(BasePlayer) })]
 public static class RPG_PlayerKill
 {
-    static void Postfix(BasePlayer __instance, HitInfo info)
+    static void Postfix(BasePlayer __instance, BasePlayer p)
     {
-        if (info == null) return;
-        BasePlayer killer = info.InitiatorPlayer;
-        if (killer == null || killer == __instance || killer.IsNpc) return;
+        if (p == null) return;
+        BasePlayer killer = p;
+        if (killer == __instance || killer.IsNpc) return;
         PlayerData d = RPG.GetOrCreate(killer);
         RPG.AddXp(killer, d, RPG.Config.xpPerPlayerKill);
     }
 }
 
-[HarmonyPatch(typeof(BaseNpc), "OnKilled")]
+[HarmonyPatch(typeof(BaseNetworkable), "OnKilled")]
 public static class RPG_NpcKill
 {
-    static void Postfix(BaseNpc __instance)
+    static void Postfix(BaseNetworkable __instance)
     {
-        if (__instance == null) return;
+        BaseCombatEntity bce = __instance as BaseCombatEntity;
+        if (bce == null) return;
+        if (__instance is BasePlayer) return;
         ulong id = __instance.net.ID.Value;
         BasePlayer killer;
         if (!RPG.LastAttacker.TryGetValue(id, out killer)) return;
@@ -242,14 +243,14 @@ public static class RPG_NpcKill
 [HarmonyPatch(typeof(PlayerMetabolism), "ServerUpdate")]
 public static class RPG_ManaTick
 {
-    static void Postfix(PlayerMetabolism __instance, BaseCombatEntity entity, float dt)
+    static void Postfix(PlayerMetabolism __instance, BaseCombatEntity ownerEntity, float delta)
     {
-        BasePlayer p = entity as BasePlayer;
+        BasePlayer p = ownerEntity as BasePlayer;
         if (p == null || p.IsNpc) return;
         PlayerData d = RPG.GetOrCreate(p);
         float maxMp = RPG.MaxMana(d);
         if (maxMp <= 0f) return;
-        float regen = (RPG.Config.manaRegenBase + d.intel * RPG.Config.manaRegenPerInt) * dt;
+        float regen = (RPG.Config.manaRegenBase + d.intel * RPG.Config.manaRegenPerInt) * delta;
         d.mana = Mathf.Min(maxMp, d.mana + regen);
         if (RPG.UiOpen.Contains(RPG.Id(p))) RpgUI.Send(p, d);
     }
