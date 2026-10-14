@@ -25,16 +25,28 @@ public static class RPG_Chat
         if (text.StartsWith("!stats") || text.StartsWith("/stats"))
         {
             PlayerData d = RPG.GetOrCreate(player);
+            bool ru = RPG.LangOf(d) == "ru";
             float maxHp = 100f + RPG.MaxHealthBonus(d);
             float maxMp = RPG.MaxMana(d);
-            player.ChatMessage("[RustPG] Level " + d.level + " | XP " + (int)d.xp + "/" + (int)RPG.XpForLevel(d.level) + " | Free: " + d.freePoints);
-            player.ChatMessage("[RustPG] STR " + d.str + " | AGI " + d.agi + " | INT " + d.intel);
-            player.ChatMessage("[RustPG] HP " + maxHp + " | Mana " + (int)d.mana + "/" + (int)maxMp);
+            if (ru)
+            {
+                player.ChatMessage("[RustPG] Уровень " + d.level + " | Опыт " + (int)d.xp + "/" + (int)RPG.XpForLevel(d.level) + " | Свободно: " + d.freePoints);
+                player.ChatMessage("[RustPG] СИЛА " + d.str + " | ЛОВК " + d.agi + " | ИНТ " + d.intel);
+                player.ChatMessage("[RustPG] HP " + maxHp + " | Мана " + (int)d.mana + "/" + (int)maxMp);
+            }
+            else
+            {
+                player.ChatMessage("[RustPG] Level " + d.level + " | XP " + (int)d.xp + "/" + (int)RPG.XpForLevel(d.level) + " | Free: " + d.freePoints);
+                player.ChatMessage("[RustPG] STR " + d.str + " | AGI " + d.agi + " | INT " + d.intel);
+                player.ChatMessage("[RustPG] HP " + maxHp + " | Mana " + (int)d.mana + "/" + (int)maxMp);
+            }
             return false;
         }
-        if (text.StartsWith("!rpgxp"))
+        if (text.StartsWith("!rpgxp") || text.StartsWith("/rpgxp"))
         {
-            if (!player.IsAdmin)
+            Network.Connection chatConn = null;
+            try { chatConn = __1.Connection; } catch (Exception) { }
+            if (!RPG.IsAdmin(player, chatConn))
             {
                 player.ChatMessage("[RustPG] Admin only.");
                 return false;
@@ -62,7 +74,7 @@ public static class RPG_Chat
                 player.ChatMessage("[RustPG] Took " + amt + " XP from " + target.displayName + ".");
                 return false;
             }
-            player.ChatMessage("[RustPG] Usage: !rpgxp give/take <name> <amount>");
+            player.ChatMessage("[RustPG] Usage: /rpgxp give/take <name> <amount>");
             return false;
         }
         return true;
@@ -77,8 +89,11 @@ public static class RPG_Console
         if (string.IsNullOrEmpty(__1) || !__1.StartsWith("rpg.")) return true;
 
         string cmd = __1;
-        string[] parts = cmd.Split(' ');
-        string sub = parts.Length > 1 ? parts[1] : "";
+        string[] sp = cmd.Split(' ');
+        string head = sp.Length > 0 ? sp[0] : "";
+        string sub = "";
+        int dot = head.IndexOf('.');
+        if (dot >= 0 && dot + 1 < head.Length) sub = head.Substring(dot + 1);
 
         Network.Connection conn = __0.Connection;
         BasePlayer player = null;
@@ -86,7 +101,7 @@ public static class RPG_Console
 
         if (sub == "add" && player != null)
         {
-            string stat = parts.Length > 2 ? parts[2] : "";
+            string stat = sp.Length > 1 ? sp[1] : "";
             PlayerData d = RPG.GetOrCreate(player);
             if (RPG.SpendPoint(player, d, stat))
             {
@@ -94,7 +109,7 @@ public static class RPG_Console
             }
             else
             {
-                __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.PermissionDenied, "Cannot spend point", null);
+                __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "no point", null);
             }
             return false;
         }
@@ -105,19 +120,28 @@ public static class RPG_Console
             __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
             return false;
         }
-        if (sub == "xp" && (conn == null || conn.authLevel > 0))
+        if (sub == "lang" && player != null)
         {
-            string action = parts.Length > 2 ? parts[2] : "";
-            string targetName = parts.Length > 3 ? parts[3] : "";
+            PlayerData d = RPG.GetOrCreate(player);
+            d.lang = (RPG.LangOf(d) == "ru") ? "en" : "ru";
+            RPG.Save(d);
+            if (RPG.UiOpen.Contains(RPG.Id(player))) RpgUI.Send(player, d);
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, d.lang, null);
+            return false;
+        }
+        if (sub == "xp" && RPG.IsAdmin(player, conn))
+        {
+            string action = sp.Length > 1 ? sp[1] : "";
+            string targetName = sp.Length > 2 ? sp[2] : "";
             float amt = 0f;
-            if (parts.Length > 4) float.TryParse(parts[4], out amt);
+            if (sp.Length > 3) float.TryParse(sp[3], out amt);
 
             if (action == "give" || action == "take")
             {
                 BasePlayer target = RPG.FindPlayer(targetName);
                 if (target == null)
                 {
-                    __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.CommandNotFound, "Player not found", null);
+                    __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "Player not found", null);
                     return false;
                 }
                 PlayerData td = RPG.GetOrCreate(target);
@@ -126,16 +150,19 @@ public static class RPG_Console
                 __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "Done", null);
                 return false;
             }
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "Usage: rpg.xp give/take <name> <amt>", null);
+            return false;
         }
-        if (sub == "reset" && (conn == null || conn.authLevel > 0))
+        if (sub == "reset" && RPG.IsAdmin(player, conn))
         {
-            string targetName = parts.Length > 2 ? parts[2] : "";
+            string targetName = sp.Length > 1 ? sp[1] : "";
             BasePlayer target = RPG.FindPlayer(targetName);
             if (target != null)
             {
                 PlayerData td = RPG.GetOrCreate(target);
                 td.level = 1; td.xp = 0; td.freePoints = RPG.Config.startingFreePoints;
                 td.str = 0; td.agi = 0; td.intel = 0;
+                if (td.spentOrder == null) td.spentOrder = new System.Collections.Generic.List<string>();
                 td.spentOrder.Clear();
                 RPG.Save(td);
                 RPG.ApplyStats(target, td);
@@ -144,7 +171,8 @@ public static class RPG_Console
             __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "Reset", null);
             return false;
         }
-        return true;
+        __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "rpg: add/close/lang/xp/reset", null);
+        return false;
     }
 }
 
@@ -249,9 +277,14 @@ public static class RPG_ManaTick
         if (p == null || p.IsNpc) return;
         PlayerData d = RPG.GetOrCreate(p);
         float maxMp = RPG.MaxMana(d);
-        if (maxMp <= 0f) return;
+        if (maxMp <= 0f)
+        {
+            RpgManaBar.Hide(p);
+            return;
+        }
         float regen = (RPG.Config.manaRegenBase + d.intel * RPG.Config.manaRegenPerInt) * delta;
         d.mana = Mathf.Min(maxMp, d.mana + regen);
+        RpgManaBar.Send(p, d.mana, maxMp);
         if (RPG.UiOpen.Contains(RPG.Id(p))) RpgUI.Send(p, d);
     }
 }

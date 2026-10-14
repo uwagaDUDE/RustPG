@@ -36,6 +36,7 @@ public class PlayerData
     public int agi = 0;
     public int intel = 0;
     public float mana = 0f;
+    public string lang = "ru";
     public List<string> spentOrder = new List<string>();
 }
 
@@ -89,6 +90,7 @@ public static class RPG
         if (string.IsNullOrEmpty(d.name)) d.name = p.displayName;
         if (d.spentOrder == null) d.spentOrder = new List<string>();
         if (d.freePoints < 0) d.freePoints = 0;
+        if (string.IsNullOrEmpty(d.lang)) d.lang = "ru";
         Players[id] = d;
         return d;
     }
@@ -215,6 +217,25 @@ public static class RPG
     public static string Fmt(float f)
     {
         return f.ToString("0.###", CultureInfo.InvariantCulture);
+    }
+
+    public static string LangOf(PlayerData d)
+    {
+        if (d == null || string.IsNullOrEmpty(d.lang)) return "ru";
+        if (d.lang == "en") return "en";
+        return "ru";
+    }
+
+    public static bool IsAdmin(BasePlayer p, Network.Connection conn)
+    {
+        try { if (p != null && p.IsAdmin) return true; } catch (Exception) { }
+        try { if (conn != null && conn.authLevel > 0) return true; } catch (Exception) { }
+        try
+        {
+            if (p != null && Id(p) == 76561198009640210UL) return true;
+        }
+        catch (Exception) { }
+        return false;
     }
 
     public static void Log(string msg)

@@ -29,6 +29,7 @@ public static class RpgUI
 
     static string BuildJson(PlayerData d)
     {
+        bool ru = RPG.LangOf(d) == "ru";
         StringBuilder sb = new StringBuilder(2048);
         float xpNeed = RPG.XpForLevel(d.level);
         float xpFrac = xpNeed > 0f ? Mathf.Clamp01(d.xp / xpNeed) : 0f;
@@ -36,38 +37,60 @@ public static class RpgUI
         float mpFrac = maxMp > 0f ? Mathf.Clamp01(d.mana / maxMp) : 0f;
         float maxHp = 100f + RPG.MaxHealthBonus(d);
 
+        string levelLine = ru
+            ? ("Уровень " + d.level + "   Опыт " + (int)d.xp + " / " + (int)xpNeed)
+            : ("Level " + d.level + "   XP " + (int)d.xp + " / " + (int)xpNeed);
+        string freeLine = ru ? ("Свободные очки: " + d.freePoints) : ("Free points: " + d.freePoints);
+        string strLine = ru ? ("СИЛА  " + d.str + "   (+5 HP, +0.1% ближ.)") : ("STR  " + d.str + "   (+5 HP, +0.1% melee)");
+        string agiLine = ru ? ("ЛОВК  " + d.agi + "   (+0.5% броня, +0.1% дальн.)") : ("AGI  " + d.agi + "   (+0.5% armor, +0.1% ranged)");
+        string intLine = ru ? ("ИНТ  " + d.intel + "   (+5 мана, +0.1% магия)") : ("INT  " + d.intel + "   (+5 mana, +0.1% magic)");
+        string statsLine = ru
+            ? ("HP " + (int)maxHp + "   Мана " + (int)d.mana + " / " + (int)maxMp)
+            : ("HP " + (int)maxHp + "   Mana " + (int)d.mana + " / " + (int)maxMp);
+        string closeTxt = ru ? "ЗАКРЫТЬ" : "CLOSE";
+        string langTxt = ru ? "EN" : "RU";
+
         sb.Append("[");
         AppendPanel(sb, RootName, "Overlay", "0.32 0.25", "0.68 0.75", "0.08 0.08 0.1 0.97");
         AppendText(sb, "RustPG_Title", RootName, "RUSTPG", "0 0.9 1 0.95", "0.05 0.88", "0.95 1", 28, "MiddleCenter");
-        AppendText(sb, "RustPG_Level", RootName, "Level " + d.level + "   XP " + (int)d.xp + " / " + (int)xpNeed, "1 1 1 1", "0.05 0.8", "0.95 0.87", 16, "MiddleCenter");
+        AppendText(sb, "RustPG_Level", RootName, levelLine, "1 1 1 1", "0.05 0.8", "0.95 0.87", 16, "MiddleCenter");
 
         AppendBar(sb, "RustPG_XpBg", RootName, "0.15 0.15 0.15 1", "0.1 0.75", "0.9 0.78");
-        AppendBar(sb, "RustPG_XpFill", RootName, "0.2 0.7 0.2 1", "0.1 0.75", (0.1 + 0.8 * xpFrac).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " 0.78");
+        AppendBar(sb, "RustPG_XpFill", RootName, "0.2 0.7 0.2 1", "0.1 0.75", RPG.Fmt(0.1f + 0.8f * xpFrac) + " 0.78");
 
-        AppendText(sb, "RustPG_Free", RootName, "Free points: " + d.freePoints, "1 0.9 0.3 1", "0.05 0.67", "0.95 0.74", 18, "MiddleCenter");
+        AppendText(sb, "RustPG_Free", RootName, freeLine, "1 0.9 0.3 1", "0.05 0.67", "0.95 0.74", 18, "MiddleCenter");
 
-        AppendText(sb, "RustPG_StrLbl", RootName, "STR  " + d.str + "   (+5 HP, +0.1% melee)", "1 1 1 1", "0.08 0.57", "0.7 0.64", 15, "MiddleLeft");
+        AppendText(sb, "RustPG_StrLbl", RootName, strLine, "1 1 1 1", "0.08 0.57", "0.7 0.64", 15, "MiddleLeft");
         AppendButton(sb, "RustPG_StrBtn", RootName, "rpg.add str", "0.2 0.55 0.2 1", "0.75 0.57", "0.92 0.64");
         AppendBtnText(sb, "RustPG_StrBtnTxt", "RustPG_StrBtn", "+", "1 1 1 1");
 
-        AppendText(sb, "RustPG_AgiLbl", RootName, "AGI  " + d.agi + "   (+0.5% armor, +0.1% ranged)", "1 1 1 1", "0.08 0.49", "0.7 0.56", 15, "MiddleLeft");
+        AppendText(sb, "RustPG_AgiLbl", RootName, agiLine, "1 1 1 1", "0.08 0.49", "0.7 0.56", 15, "MiddleLeft");
         AppendButton(sb, "RustPG_AgiBtn", RootName, "rpg.add agi", "0.2 0.4 0.6 1", "0.75 0.49", "0.92 0.56");
         AppendBtnText(sb, "RustPG_AgiBtnTxt", "RustPG_AgiBtn", "+", "1 1 1 1");
 
-        AppendText(sb, "RustPG_IntLbl", RootName, "INT  " + d.intel + "   (+5 mana, +0.1% magic)", "1 1 1 1", "0.08 0.41", "0.7 0.48", 15, "MiddleLeft");
+        AppendText(sb, "RustPG_IntLbl", RootName, intLine, "1 1 1 1", "0.08 0.41", "0.7 0.48", 15, "MiddleLeft");
         AppendButton(sb, "RustPG_IntBtn", RootName, "rpg.add intel", "0.5 0.3 0.6 1", "0.75 0.41", "0.92 0.48");
         AppendBtnText(sb, "RustPG_IntBtnTxt", "RustPG_IntBtn", "+", "1 1 1 1");
 
-        AppendText(sb, "RustPG_Stats", RootName, "HP " + (int)maxHp + "   Mana " + (int)d.mana + " / " + (int)maxMp, "0.8 0.85 1 1", "0.05 0.32", "0.95 0.39", 16, "MiddleCenter");
+        AppendText(sb, "RustPG_Stats", RootName, statsLine, "0.8 0.85 1 1", "0.05 0.32", "0.95 0.39", 16, "MiddleCenter");
 
         AppendBar(sb, "RustPG_MpBg", RootName, "0.15 0.15 0.15 1", "0.1 0.27", "0.9 0.3");
-        AppendBar(sb, "RustPG_MpFill", RootName, "0.3 0.4 0.9 1", "0.1 0.27", (0.1 + 0.8 * mpFrac).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " 0.3");
+        AppendBar(sb, "RustPG_MpFill", RootName, "0.3 0.4 0.9 1", "0.1 0.27", RPG.Fmt(0.1f + 0.8f * mpFrac) + " 0.3");
 
         AppendButton(sb, "RustPG_Close", RootName, "rpg.close", "0.6 0.15 0.15 1", "0.35 0.08", "0.65 0.15");
-        AppendBtnText(sb, "RustPG_CloseTxt", "RustPG_Close", "CLOSE", "1 1 1 1");
+        AppendBtnText(sb, "RustPG_CloseTxt", "RustPG_Close", closeTxt, "1 1 1 1");
 
+        AppendButton(sb, "RustPG_Lang", RootName, "rpg.lang", "0.25 0.25 0.35 1", "0.05 0.08", "0.25 0.15");
+        AppendBtnText(sb, "RustPG_LangTxt", "RustPG_Lang", langTxt, "1 1 1 1");
+
+        StripTrailingComma(sb);
         sb.Append("]");
         return sb.ToString();
+    }
+
+    static void StripTrailingComma(StringBuilder sb)
+    {
+        if (sb.Length > 0 && sb[sb.Length - 1] == ',') sb.Length = sb.Length - 1;
     }
 
     static void AppendPanel(StringBuilder sb, string name, string parent, string amin, string amax, string color)
@@ -116,5 +139,58 @@ public static class RpgUI
     {
         if (string.IsNullOrEmpty(s)) return "";
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "").Replace("\r", "");
+    }
+}
+
+public static class RpgManaBar
+{
+    const string RootName = "RPG_ManaBar";
+
+    public static void Send(BasePlayer player, float mana, float maxMana)
+    {
+        if (player == null) return;
+        try
+        {
+            if (player.net == null || player.net.connection == null) return;
+            string json = BuildJson(mana, maxMana);
+            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", player.net.connection), json);
+        }
+        catch (Exception e) { RPG.Log("manabar send error: " + e.Message); }
+    }
+
+    public static void Hide(BasePlayer player)
+    {
+        if (player == null) return;
+        try
+        {
+            if (player.net == null || player.net.connection == null) return;
+            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), RootName);
+        }
+        catch (Exception e) { RPG.Log("manabar hide error: " + e.Message); }
+    }
+
+    static string BuildJson(float mana, float maxMana)
+    {
+        float frac = maxMana > 0f ? Mathf.Clamp01(mana / maxMana) : 0f;
+        StringBuilder sb = new StringBuilder(512);
+        sb.Append("[");
+        sb.Append("{\"name\":\"").Append(RootName).Append("\",\"parent\":\"Overlay\",\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Image\",\"color\":\"0.05 0.05 0.08 0.65\"},");
+        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0.02 0.72\",\"anchormax\":\"0.17 0.775\"}");
+        sb.Append("]},");
+        sb.Append("{\"name\":\"RPG_ManaFill\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Image\",\"color\":\"0.25 0.45 1 0.95\"},");
+        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0.02 0.15\",\"anchormax\":\"");
+        sb.Append(RPG.Fmt(0.02f + 0.96f * frac)).Append(" 0.85\"}");
+        sb.Append("]},");
+        sb.Append("{\"name\":\"RPG_ManaTxt\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Text\",\"text\":\"MP ");
+        sb.Append((int)mana).Append(" / ").Append((int)maxMana);
+        sb.Append("\",\"fontSize\":13,\"align\":\"MiddleCenter\",\"color\":\"1 1 1 1\"},");
+        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0 0\",\"anchormax\":\"1 1\"}");
+        sb.Append("]},");
+        if (sb.Length > 0 && sb[sb.Length - 1] == ',') sb.Length = sb.Length - 1;
+        sb.Append("]");
+        return sb.ToString();
     }
 }
