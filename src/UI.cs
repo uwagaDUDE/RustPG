@@ -1,25 +1,28 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
+// Window (/rpg). Every (re)build first destroys the old root, so windows never stack.
 public static class RpgUI
 {
-    const string RootName = "RustPG_Root";
+    public const string RootName = "RustPG_Root";
 
     public static void Send(BasePlayer player, PlayerData d)
     {
-        if (player == null || d == null) return;
+        if (player == null || d == null || player.net == null || player.net.connection == null) return;
         try
         {
-            string json = BuildJson(d);
-            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", player.net.connection), json);
+            var conn = player.net.connection;
+            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("DestroyUI", conn), RootName);
+            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", conn), BuildJson(d));
         }
         catch (Exception e) { RPG.Log("UI send error: " + e.Message); }
     }
 
     public static void Destroy(BasePlayer player)
     {
-        if (player == null) return;
+        if (player == null || player.net == null || player.net.connection == null) return;
         try
         {
             CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), RootName);
@@ -44,9 +47,7 @@ public static class RpgUI
         string strLine = ru ? ("СИЛА  " + d.str + "   (+5 HP, +0.1% ближ.)") : ("STR  " + d.str + "   (+5 HP, +0.1% melee)");
         string agiLine = ru ? ("ЛОВК  " + d.agi + "   (+0.5% броня, +0.1% дальн.)") : ("AGI  " + d.agi + "   (+0.5% armor, +0.1% ranged)");
         string intLine = ru ? ("ИНТ  " + d.intel + "   (+5 мана, +0.1% магия)") : ("INT  " + d.intel + "   (+5 mana, +0.1% magic)");
-        string statsLine = ru
-            ? ("HP " + (int)maxHp + "   Мана " + (int)d.mana + " / " + (int)maxMp)
-            : ("HP " + (int)maxHp + "   Mana " + (int)d.mana + " / " + (int)maxMp);
+        string statsLine = "HP " + (int)maxHp + (ru ? "   Мана " : "   Mana ") + (int)d.mana + " / " + (int)maxMp;
         string closeTxt = ru ? "ЗАКРЫТЬ" : "CLOSE";
         string langTxt = ru ? "EN" : "RU";
 
@@ -83,14 +84,14 @@ public static class RpgUI
         AppendButton(sb, "RustPG_Lang", RootName, "rpg.lang", "0.25 0.25 0.35 1", "0.05 0.08", "0.25 0.15");
         AppendBtnText(sb, "RustPG_LangTxt", "RustPG_Lang", langTxt, "1 1 1 1");
 
-        StripTrailingComma(sb);
-        sb.Append("]");
-        return sb.ToString();
+        return Finish(sb);
     }
 
-    static void StripTrailingComma(StringBuilder sb)
+    static string Finish(StringBuilder sb)
     {
         if (sb.Length > 0 && sb[sb.Length - 1] == ',') sb.Length = sb.Length - 1;
+        sb.Append("]");
+        return sb.ToString();
     }
 
     static void AppendPanel(StringBuilder sb, string name, string parent, string amin, string amax, string color)
@@ -142,36 +143,92 @@ public static class RpgUI
     }
 }
 
+// Mana HUD bar (left side, above vitals). Created once per connection, then only
+// the changed parts are sent with update:true, throttled. Never re-added per tick.
 public static class RpgManaBar
 {
     const string RootName = "RPG_ManaBar";
+    const float Throttle = 0.5f;
 
-    public static void Send(BasePlayer player, float mana, float maxMana)
+    sealed class Hud
     {
-        if (player == null) return;
-        try
-        {
-            if (player.net == null || player.net.connection == null) return;
-            string json = BuildJson(mana, maxMana);
-            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", player.net.connection), json);
-        }
-        catch (Exception e) { RPG.Log("manabar send error: " + e.Message); }
+        public Network.Connection Conn;
+        public int LastMana;
+        public int LastFill;
+        public float LastSend;
     }
 
-    public static void Hide(BasePlayer player)
+    static readonly Dictionary<ulong, Hud> _hud = new Dictionary<ulong, Hud>();
+
+    public static void Update(BasePlayer p, ulong id, float mana, float maxMana)
     {
-        if (player == null) return;
+        if (p == null || p.net == null || p.net.connection == null) return;
+
+        Hud h;
+        bool has = _hud.TryGetValue(id, out h);
+        if (maxMana <= 0f)
+        {
+            if (has) Hide(p, id);
+            return;
+        }
+
+        var conn = p.net.connection;
+        int curMana = (int)mana;
+        int curFill = (int)(Mathf.Clamp01(mana / maxMana) * 100f);
+        float now = Time.realtimeSinceStartup;
+
+        if (!has || h.Conn != conn)
+        {
+            if (!has) { h = new Hud(); _hud[id] = h; }
+            h.Conn = conn;
+            h.LastMana = curMana;
+            h.LastFill = curFill;
+            h.LastSend = now;
+            try
+            {
+                CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("DestroyUI", conn), RootName);
+                CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", conn), BuildFull(mana, maxMana));
+            }
+            catch (Exception e) { RPG.Log("manabar create error: " + e.Message); }
+            return;
+        }
+
+        if (curMana == h.LastMana && curFill == h.LastFill) return;
+        if (now - h.LastSend < Throttle) return;
+        h.LastMana = curMana;
+        h.LastFill = curFill;
+        h.LastSend = now;
         try
         {
-            if (player.net == null || player.net.connection == null) return;
-            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("DestroyUI", player.net.connection), RootName);
+            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", conn), BuildUpdate(mana, maxMana));
+        }
+        catch (Exception e) { RPG.Log("manabar update error: " + e.Message); }
+    }
+
+    public static void Hide(BasePlayer p, ulong id)
+    {
+        if (!_hud.Remove(id)) return;
+        if (p == null || p.net == null || p.net.connection == null) return;
+        try
+        {
+            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("DestroyUI", p.net.connection), RootName);
         }
         catch (Exception e) { RPG.Log("manabar hide error: " + e.Message); }
     }
 
-    static string BuildJson(float mana, float maxMana)
+    static string FillAnchor(float frac)
     {
-        float frac = maxMana > 0f ? Mathf.Clamp01(mana / maxMana) : 0f;
+        return "0.02 0.15";
+    }
+
+    static string FillMax(float frac)
+    {
+        return RPG.Fmt(0.02f + 0.96f * frac) + " 0.85";
+    }
+
+    static string BuildFull(float mana, float maxMana)
+    {
+        float frac = Mathf.Clamp01(mana / maxMana);
         StringBuilder sb = new StringBuilder(512);
         sb.Append("[");
         sb.Append("{\"name\":\"").Append(RootName).Append("\",\"parent\":\"Overlay\",\"components\":[");
@@ -180,15 +237,33 @@ public static class RpgManaBar
         sb.Append("]},");
         sb.Append("{\"name\":\"RPG_ManaFill\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
         sb.Append("{\"type\":\"UnityEngine.UI.Image\",\"color\":\"0.25 0.45 1 0.95\"},");
-        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0.02 0.15\",\"anchormax\":\"");
-        sb.Append(RPG.Fmt(0.02f + 0.96f * frac)).Append(" 0.85\"}");
+        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"").Append(FillAnchor(frac)).Append("\",\"anchormax\":\"").Append(FillMax(frac)).Append("\"}");
         sb.Append("]},");
         sb.Append("{\"name\":\"RPG_ManaTxt\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
-        sb.Append("{\"type\":\"UnityEngine.UI.Text\",\"text\":\"MP ");
-        sb.Append((int)mana).Append(" / ").Append((int)maxMana);
+        sb.Append("{\"type\":\"UnityEngine.UI.Text\",\"text\":\"MP ").Append((int)mana).Append(" / ").Append((int)maxMana);
         sb.Append("\",\"fontSize\":13,\"align\":\"MiddleCenter\",\"color\":\"1 1 1 1\"},");
         sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0 0\",\"anchormax\":\"1 1\"}");
         sb.Append("]},");
+        return Finish(sb);
+    }
+
+    static string BuildUpdate(float mana, float maxMana)
+    {
+        float frac = Mathf.Clamp01(mana / maxMana);
+        StringBuilder sb = new StringBuilder(384);
+        sb.Append("[");
+        sb.Append("{\"name\":\"RPG_ManaFill\",\"parent\":\"").Append(RootName).Append("\",\"update\":true,\"components\":[");
+        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"").Append(FillAnchor(frac)).Append("\",\"anchormax\":\"").Append(FillMax(frac)).Append("\"}");
+        sb.Append("]},");
+        sb.Append("{\"name\":\"RPG_ManaTxt\",\"parent\":\"").Append(RootName).Append("\",\"update\":true,\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Text\",\"text\":\"MP ").Append((int)mana).Append(" / ").Append((int)maxMana);
+        sb.Append("\",\"fontSize\":13,\"align\":\"MiddleCenter\",\"color\":\"1 1 1 1\"}");
+        sb.Append("]},");
+        return Finish(sb);
+    }
+
+    static string Finish(StringBuilder sb)
+    {
         if (sb.Length > 0 && sb[sb.Length - 1] == ',') sb.Length = sb.Length - 1;
         sb.Append("]");
         return sb.ToString();

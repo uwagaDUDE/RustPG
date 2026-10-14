@@ -22,6 +22,27 @@ public static class RPG_Chat
             RpgUI.Send(player, d);
             return false;
         }
+        if (text.StartsWith("/tk.reset"))
+        {
+            Network.Connection rc = null;
+            try { rc = __1.Connection; } catch (Exception) { }
+            if (!RPG.IsAdmin(player, rc))
+            {
+                player.ChatMessage("[RustPG] Admin only.");
+                return false;
+            }
+            string[] rp = text.Split(' ');
+            BasePlayer target = player;
+            if (rp.Length > 1)
+            {
+                target = RPG.FindPlayer(rp[1]);
+                if (target == null) { player.ChatMessage("[RustPG] Player not found."); return false; }
+            }
+            PlayerData td = RPG.GetOrCreate(target);
+            RPG.Respec(target, td);
+            player.ChatMessage("[RustPG] Points reset for " + target.displayName + ". Free points: " + td.freePoints);
+            return false;
+        }
         if (text.StartsWith("!stats") || text.StartsWith("/stats"))
         {
             PlayerData d = RPG.GetOrCreate(player);
@@ -279,12 +300,15 @@ public static class RPG_ManaTick
         float maxMp = RPG.MaxMana(d);
         if (maxMp <= 0f)
         {
-            RpgManaBar.Hide(p);
-            return;
+            d.mana = 0f;
         }
-        float regen = (RPG.Config.manaRegenBase + d.intel * RPG.Config.manaRegenPerInt) * delta;
-        d.mana = Mathf.Min(maxMp, d.mana + regen);
-        RpgManaBar.Send(p, d.mana, maxMp);
-        if (RPG.UiOpen.Contains(RPG.Id(p))) RpgUI.Send(p, d);
+        else if (d.mana < maxMp)
+        {
+            float regen = (RPG.Config.manaRegenBase + d.intel * RPG.Config.manaRegenPerInt) * delta;
+            d.mana = Mathf.Min(maxMp, d.mana + regen);
+        }
+        // HUD is updated in place (throttled). The /rpg window is NOT rebuilt per tick.
+        RpgManaBar.Update(p, d.steamId, d.mana, maxMp);
+        RPG.Housekeeping();
     }
 }

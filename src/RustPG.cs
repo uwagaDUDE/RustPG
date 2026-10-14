@@ -129,11 +129,15 @@ public static class RPG
             d.freePoints++;
             leveled = true;
         }
-        Save(d);
         if (leveled)
         {
+            Save(d);
             p.ChatMessage("[RustPG] Level up! Now level " + d.level + ". Free points: " + d.freePoints);
             if (UiOpen.Contains(RPG.Id(p))) RpgUI.Send(p, d);
+        }
+        else
+        {
+            MarkDirty(d);
         }
     }
 
@@ -246,14 +250,77 @@ public static class RPG
     private static FieldInfo _userIdField;
     private static MethodInfo _encryptedGet;
 
+    // Fast path: UserIDString is the decimal steamid. Reflection only as a fallback.
     public static ulong Id(BasePlayer p)
     {
+        ulong id;
+        string s = p.UserIDString;
+        if (s != null && ulong.TryParse(s, out id)) return id;
+
         if (_userIdField == null)
             _userIdField = typeof(BasePlayer).GetField("userID", BindingFlags.Public | BindingFlags.Instance);
         object boxed = _userIdField.GetValue(p);
         if (_encryptedGet == null)
             _encryptedGet = boxed.GetType().GetMethod("Get", BindingFlags.Public | BindingFlags.Instance);
         return (ulong)_encryptedGet.Invoke(boxed, null);
+    }
+
+    // ---- Persistence: gain/mana changes only mark dirty; flushed every 30s ----
+    public static readonly HashSet<ulong> Dirty = new HashSet<ulong>();
+    static float _nextHousekeeping;
+
+    public static void MarkDirty(PlayerData d)
+    {
+        if (d != null) Dirty.Add(d.steamId);
+    }
+
+    public static void Housekeeping()
+    {
+        float now = Time.realtimeSinceStartup;
+        if (now < _nextHousekeeping) return;
+        _nextHousekeeping = now + 30f;
+        FlushDirty();
+        PruneLastAttacker();
+    }
+
+    public static void FlushDirty()
+    {
+        if (Dirty.Count == 0) return;
+        var ids = new List<ulong>(Dirty);
+        Dirty.Clear();
+        for (int i = 0; i < ids.Count; i++)
+        {
+            PlayerData d;
+            if (Players.TryGetValue(ids[i], out d)) Save(d);
+        }
+    }
+
+    static void PruneLastAttacker()
+    {
+        if (LastAttacker.Count == 0) return;
+        var rm = new List<ulong>();
+        foreach (var kv in LastAttacker)
+            if (kv.Value == null) rm.Add(kv.Key);
+        for (int i = 0; i < rm.Count; i++) LastAttacker.Remove(rm[i]);
+    }
+
+    // Available points = start + one per level above 1. Stats go back to 0.
+    public static void Respec(BasePlayer p, PlayerData d)
+    {
+        if (d == null) return;
+        d.freePoints = Config.startingFreePoints + (d.level - 1);
+        d.str = 0;
+        d.agi = 0;
+        d.intel = 0;
+        d.spentOrder.Clear();
+        float maxMp = MaxMana(d);
+        if (d.mana > maxMp) d.mana = maxMp;
+        Save(d);
+        if (p != null)
+        {
+            ApplyStats(p, d);
+            if (UiOpen.Contains(Id(p))) RpgUI.Send(p, d);
+        }
     }
 }
 
