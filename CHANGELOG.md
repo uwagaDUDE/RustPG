@@ -1,5 +1,20 @@
 ﻿# Changelog
 
+## [0.5.0] - 2026-10-15
+### Added
+- Death Fog, Ice Ball, Ice Grip, Dragon Breath and Frost Breath; configurable magic balance.
+- Spellbook item with server-validated inscription UI and persistent per-staff loadout/selection.
+- RMB tap to cycle, hold 3 seconds to open selection; channeled breath input and interruptible fog windup.
+- Cast sound, embedded frost overlay, movement slow/root for players and NPC navigation.
+### Changed
+- Fireball impact is 35 base Heat damage, range 150 m.
+- Burning now owns and removes a networked visual instead of repeatedly emitting unmanaged onfire effects.
+- Timed smoke entity is buried at the targeted surface and explicitly removed with native smoke registry cleanup.
+### Verification
+- Build, 25 executable rules checks, 16 Harmony target checks, embedded resource and item persistence checks passed.
+- In-game behavior and visuals remain pending deployment/restart; see MAGIC_IMPLEMENTATION.md.
+
+
 ## [0.4.4] - 2026-10-15
 ### Added
 - Fire bolt and fire blast ignite living players, NPCs and animals for 5 seconds: 2 base Heat damage per second.

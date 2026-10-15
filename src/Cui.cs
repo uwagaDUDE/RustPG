@@ -74,6 +74,15 @@ public static class Cui
         sb.Append("]},");
     }
 
+    public static void Input(StringBuilder sb, string name, string parent, string command, string value, string amin, string amax, int limit)
+    {
+        sb.Append("{\"name\":\"").Append(name).Append("\",\"parent\":\"").Append(parent).Append("\",\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Image\",\"color\":\"0.035 0.045 0.065 1\"},");
+        sb.Append("{\"type\":\"UnityEngine.UI.InputField\",\"text\":\"").Append(Esc(value)).Append("\",\"command\":\"").Append(Esc(command)).Append("\",\"fontSize\":15,\"align\":\"MiddleLeft\",\"color\":\"1 1 1 1\",\"charsLimit\":").Append(limit).Append(",\"lineType\":\"SingleLine\"},");
+        sb.Append("{\"type\":\"NeedsKeyboard\"},");
+        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"").Append(amin).Append("\",\"anchormax\":\"").Append(amax).Append("\"}]},");
+    }
+
     static string Esc(string s)
     {
         if (string.IsNullOrEmpty(s)) return "";

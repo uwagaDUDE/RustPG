@@ -32,6 +32,8 @@ $refs = @(
     "/r:$game\Newtonsoft.Json.dll"
 )
 
+$refs += "/resource:$root\assets\frost.png,RustPG.frost.png"
+
 $files = Get-ChildItem "$src\*.cs" | ForEach-Object { $_.FullName }
 
 & $csc /nologo /nowarn:1701,1684 /target:library /out:"$out\RustPG.dll" @refs $files

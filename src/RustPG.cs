@@ -10,6 +10,7 @@ using UnityEngine;
 
 public class RPGConfig
 {
+    public MagicConfig magic = new MagicConfig();
     public float hpPerStr = 5f;
     public float meleeDamagePerStr = 0.001f;
     public float rangedDamagePerAgi = 0.001f;
@@ -66,6 +67,10 @@ public static class RPG
             Config = new RPGConfig();
             SaveConfig();
         }
+        if (Config == null) Config = new RPGConfig();
+        if (Config.magic == null) Config.magic = new MagicConfig();
+        Config.magic.Validate();
+        SaveConfig();
     }
 
     public static void SaveConfig()
@@ -401,5 +406,6 @@ public class RustPG : BuddyPlugin
         RPG.Init(root);
         BuddyApi.Register(this);
         RPG.Log("loaded, data dir=" + RPG.DataDir);
+        RPG.Log("magic v0.5.0: 8 spells, per-item loadouts, quick swap, managed effects");
     }
 }

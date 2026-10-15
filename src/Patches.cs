@@ -77,6 +77,20 @@ public static class RPG_Chat
             Staff.SetSpell(player, sid);
             return false;
         }
+        if (head == "/spellbook")
+        { SpellBook.Open(player); return false; }
+        if (head == "/rpgbook")
+        {
+            Network.Connection bc = null; try { bc = __1.Connection; } catch (Exception) { }
+            if (!RPG.IsAdmin(player, bc)) { player.ChatMessage("[RustPG] Admin only."); return false; }
+            if (tok.Length < 3 || tok[1] != "give") { player.ChatMessage("[RustPG] /rpgbook give <name>"); return false; }
+            BasePlayer target = RPG.FindPlayer(tok[2]);
+            if (target == null) { player.ChatMessage("[RustPG] Player not found."); return false; }
+            Item book = SpellBook.Create();
+            if (book == null) { player.ChatMessage("[RustPG] Failed to create spellbook."); return false; }
+            target.GiveItem(book); target.ChatMessage("[RustPG] Книга заклинаний: посох в руки, затем /spellbook.");
+            return false;
+        }
         if (head == "/rpgstaff")
         {
             Network.Connection sc = null;
@@ -98,7 +112,7 @@ public static class RPG_Chat
             if (staffItem == null) { player.ChatMessage("[RustPG] Failed to create staff item."); return false; }
             st.GiveItem(staffItem);
             player.ChatMessage("[RustPG] Staff given to " + st.displayName + ".");
-            st.ChatMessage("[RustPG] You received a Wooden Staff. Left click casts; /spell 1|2|3.");
+            st.ChatMessage("[RustPG] Посох получен. ЛКМ: каст; ПКМ: следующее; ПКМ 3 с: меню; /spellbook: запись.");
             return false;
         }
         if (head == "/tk.reset")
@@ -276,7 +290,7 @@ public static class RPG_Console
         if (sub == "spell" && player != null)
         {
             int sn;
-            if (sp.Length > 1 && int.TryParse(sp[1], out sn)) Staff.SetSpell(player, sn);
+            if (sp.Length > 1 && int.TryParse(sp[1], out sn)) SpellMenuUI.Select(player, sn);
             SpellMenuUI.Close(player);
             __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
             return false;
@@ -286,6 +300,21 @@ public static class RPG_Console
             SpellMenuUI.Close(player);
             __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
             return false;
+        }
+        if (sub == "bookopen" && player != null)
+        {
+            SpellBook.Open(player);
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null); return false;
+        }
+        if (sub == "book" && player != null)
+        {
+            int sn; if (sp.Length > 1 && int.TryParse(sp[1], out sn)) SpellBook.Toggle(player, sn);
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null); return false;
+        }
+        if (sub == "bookclose" && player != null)
+        {
+            SpellBook.Close(player);
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null); return false;
         }
         if (sub == "skill" && player != null)
         {
@@ -348,6 +377,7 @@ public static class RPG_OnAttacked
     static void Prefix(BaseCombatEntity __instance, HitInfo info)
     {
         if (info == null) return;
+        if (info.damageTypes.Total() > 0) StaffAction.Interrupt(__instance as BasePlayer);
         BasePlayer attacker = info.InitiatorPlayer;
         if (attacker != null && attacker != __instance)
         {
