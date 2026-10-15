@@ -126,7 +126,8 @@ public static class RPG_Chat
         {
             PlayerData d = RPG.GetOrCreate(player);
             bool ru = RPG.LangOf(d) == "ru";
-            float maxHp = 100f + RPG.MaxHealthBonus(d);
+            // Real max from the game (includes the RustPG bonus via the MaxHealth postfix).
+            float maxHp = player.MaxHealth();
             float maxMp = RPG.MaxMana(d);
             if (ru)
             {
@@ -306,13 +307,16 @@ public static class RPG_Console
     }
 }
 
-[HarmonyPatch(typeof(BasePlayer), "StartMaxHealth")]
+// BasePlayer overrides MaxHealth(), so SetMaxHealth on the base class did not change what
+// the game uses. The stat bonus is added here, on every read of the max value.
+[HarmonyPatch(typeof(BasePlayer), "MaxHealth")]
 public static class RPG_MaxHealth
 {
     static void Postfix(BasePlayer __instance, ref float __result)
     {
         if (__instance == null || __instance.IsNpc) return;
         PlayerData d = RPG.GetOrCreate(__instance);
+        if (d == null) return;
         __result += RPG.MaxHealthBonus(d);
     }
 }

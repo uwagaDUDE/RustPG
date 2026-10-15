@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1] - 2026-10-15
+### Fixed
+- Staff item: Rust shortname is `spear.wooden`; creation tries it first, then `wooden.spear`, and logs which one worked
+- Max HP bonus (STR, Vitality) did not apply: `BasePlayer` overrides `MaxHealth()`, so the bonus is now added in a `BasePlayer.MaxHealth` postfix. Current HP gets only the gained amount
+- `/stats` shows the real game max HP
+
 ## [0.4.0] - 2026-10-15
 ### Added
 - Skill tree `/skills`: 12 nodes in 4 branches (General, Warrior, Hunter, Mage), one point every 5 levels (10 total)

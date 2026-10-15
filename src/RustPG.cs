@@ -203,14 +203,24 @@ public static class RPG
         return true;
     }
 
+    // Bonus last applied to each player's current HP. Used to grant only the difference.
+    static readonly Dictionary<ulong, float> _appliedBonus = new Dictionary<ulong, float>();
+
+    // Max HP itself comes from the MaxHealth() postfix. Here we only give current HP
+    // the increase (so a stat point heals by the gained amount) and clamp it.
     public static void ApplyStats(BasePlayer p, PlayerData d)
     {
-        if (p == null || d == null) return;
-        float newMax = 100f + MaxHealthBonus(d);
-        float oldMax = p.MaxHealth();
-        p.SetMaxHealth(newMax);
-        if (p.health >= oldMax - 0.1f) p.SetHealth(newMax);
-        else if (p.health > newMax) p.SetHealth(newMax);
+        if (p == null || d == null || p.IsDead()) return;
+        float bonus = MaxHealthBonus(d);
+        float prev;
+        if (!_appliedBonus.TryGetValue(d.steamId, out prev)) prev = bonus;
+        _appliedBonus[d.steamId] = bonus;
+
+        float max = p.MaxHealth();
+        float hp = p.health;
+        if (bonus > prev) hp += bonus - prev;
+        if (hp > max) hp = max;
+        if (hp != p.health) p.SetHealth(hp);
     }
 
     public static BasePlayer FindPlayer(string name)

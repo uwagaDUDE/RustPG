@@ -10,7 +10,9 @@ using UnityEngine;
 // Basic spells: 1 = Fire bolt, 2 = Heal, 3 = Ward. Selection is kept in memory.
 public static class Staff
 {
-    public const string Shortname = "wooden.spear";
+    // Rust's wooden spear shortname is "spear.wooden". The other form is kept as a fallback;
+    // the first one that ItemManager resolves is used and logged.
+    static readonly string[] Shortnames = { "spear.wooden", "wooden.spear" };
     public const string ItemName = "RPG Staff";
 
     public const int SpellFire = 1;
@@ -42,14 +44,27 @@ public static class Staff
 
     public static Item Create()
     {
-        Item it = ItemManager.CreateByName(Shortname, 1, 0);
-        if (it != null) it.name = ItemName;
-        return it;
+        for (int i = 0; i < Shortnames.Length; i++)
+        {
+            Item it = null;
+            try { it = ItemManager.CreateByName(Shortnames[i], 1, 0); }
+            catch (Exception e) { RPG.Log("staff create '" + Shortnames[i] + "' threw: " + e.Message); }
+            if (it == null) continue;
+            it.name = ItemName;
+            RPG.Log("staff created from shortname '" + Shortnames[i] + "'");
+            return it;
+        }
+        RPG.Log("staff: no item for shortnames " + string.Join(", ", Shortnames));
+        return null;
     }
 
     public static bool IsStaff(Item item)
     {
-        return item != null && item.info != null && item.info.shortname == Shortname && item.name == ItemName;
+        if (item == null || item.info == null || item.name != ItemName) return false;
+        string sn = item.info.shortname;
+        for (int i = 0; i < Shortnames.Length; i++)
+            if (sn == Shortnames[i]) return true;
+        return false;
     }
 
     public static bool IsHolding(BasePlayer p)
