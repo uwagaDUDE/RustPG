@@ -1,5 +1,19 @@
-# Changelog
+﻿# Changelog
 
+## [0.4.2] - 2026-10-15
+### Fixed
+- Staff spells cast on air swings (hook BaseMelee.ServerUse), not only on hits. A dedupe window (0.25 s) keeps one swing = one cast
+- Staff RMB no longer throws the spear: blocked at ThrownWeapon.DoThrow, which is the call that spawns it
+- Respawn/spawn health is 50% of the real max (BaseCombatEntity.StartHealth postfix, espawnHealthFraction in config.json)
+- Vitals HUD: HP bar against the real max (with STR and Vitality bonuses), MP bar below it
+
+### Added
+- Skill tree: click a node to read its name, requirements, description and status in the bottom panel. ОТКРЫТЬ unlocks the selected node
+- Multi-line CUI text (\n now escaped as JSON newline in Cui.Esc)
+
+### Notes
+- Respawn health also applies on the first spawn after login (same StartHealth call)
+- Staff hooks log staff: ServerUse hook active / PlayerAttack hook active / DoThrow hook active on first use, for checking which path fires in-game
 ## [0.4.1] - 2026-10-15
 ### Fixed
 - Staff item: Rust shortname is `spear.wooden`; creation tries it first, then `wooden.spear`, and logs which one worked

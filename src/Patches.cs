@@ -296,6 +296,12 @@ public static class RPG_Console
             __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
             return false;
         }
+        if (sub == "skillview" && player != null)
+        {
+            SkillsUI.Select(player, RPG.GetOrCreate(player), sp.Length > 1 ? sp[1] : "");
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
+            return false;
+        }
         if (sub == "skillsclose" && player != null)
         {
             SkillsUI.Close(player);
@@ -304,6 +310,21 @@ public static class RPG_Console
         }
         __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "rpg: add/close/lang/xp/reset/spell/skill", null);
         return false;
+    }
+}
+
+// Starting health for a spawn is a fraction of the real max (with bonuses), not a flat value.
+// Applies to every player spawn: respawn after death, and also the first spawn after login.
+[HarmonyPatch(typeof(BaseCombatEntity), "StartHealth")]
+public static class RPG_RespawnHealth
+{
+    static void Postfix(BaseCombatEntity __instance, ref float __result)
+    {
+        BasePlayer p = __instance as BasePlayer;
+        if (p == null || p.IsNpc) return;
+        float max = p.MaxHealth();
+        if (max <= 0f) return;
+        __result = max * RPG.Config.respawnHealthFraction;
     }
 }
 
@@ -439,7 +460,7 @@ public static class RPG_ManaTick
             d.mana = Mathf.Min(maxMp, d.mana + regen);
         }
         // HUD is updated in place (throttled). The /rpg window is NOT rebuilt per tick.
-        RpgManaBar.Update(p, d.steamId, d.mana, maxMp);
+        RpgManaBar.Update(p, d.steamId, d.mana, maxMp, p.health, p.MaxHealth());
         RPG.Housekeeping();
     }
 }

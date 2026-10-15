@@ -147,8 +147,20 @@ public static class Staff
         Msg(p, d, "Выбрано заклинание: " + SpellName(d, id), "Selected spell: " + SpellName(d, id));
     }
 
-    // Called from the LMB hook instead of melee.
-    public static void OnCast(BasePlayer p)
+    static readonly Dictionary<ulong, float> _lastSwing = new Dictionary<ulong, float>();
+
+    // One swing = one cast. Ignores a second hook firing for the same swing.
+    public static void TryCast(BasePlayer p)
+    {
+        ulong sid = RPG.Id(p);
+        float now = Time.realtimeSinceStartup;
+        float last;
+        if (_lastSwing.TryGetValue(sid, out last) && now - last < 0.25f) return;
+        _lastSwing[sid] = now;
+        OnCast(p);
+    }
+
+    static void OnCast(BasePlayer p)
     {
         PlayerData d = RPG.GetOrCreate(p);
         ulong id = d.steamId;
@@ -279,7 +291,44 @@ public static class SpellMenuUI
     }
 }
 
-// LMB with the staff: cast instead of melee. Returning false skips the vanilla attack.
+// Every swing with the staff goes through here. Two hooks can fire for the same swing
+// (BaseMelee.ServerUse for air and hits, PlayerAttack for hits), so the cast is deduplicated.
+public static class StaffHooks
+{
+    static bool _loggedUse, _loggedAttack, _loggedThrow;
+
+    public static void OnSwing(BasePlayer p, string source)
+    {
+        if (p == null || !Staff.IsHolding(p)) return;
+        if (source == "use" && !_loggedUse) { _loggedUse = true; RPG.Log("staff: ServerUse hook active"); }
+        if (source == "attack" && !_loggedAttack) { _loggedAttack = true; RPG.Log("staff: PlayerAttack hook active"); }
+        Staff.TryCast(p);
+    }
+
+    public static bool OnThrow(BasePlayer p)
+    {
+        if (p == null || !Staff.IsHolding(p)) return false;
+        if (!_loggedThrow) { _loggedThrow = true; RPG.Log("staff: DoThrow hook active (RMB opens spell menu)"); }
+        SpellMenuUI.Open(p, RPG.GetOrCreate(p));
+        return true;
+    }
+}
+
+// Air swing: the server calls ServerUse for every use of a held melee item.
+[HarmonyPatch(typeof(BaseMelee), "ServerUse", new System.Type[] { typeof(HeldEntityServerUseParams) })]
+public static class RPG_StaffServerUse
+{
+    static bool Prefix(BaseMelee __instance)
+    {
+        BasePlayer p = null;
+        try { p = __instance.GetOwnerPlayer(); } catch (Exception) { }
+        if (p == null || !Staff.IsHolding(p)) return true;
+        StaffHooks.OnSwing(p, "use");
+        return false;
+    }
+}
+
+// Hit swing: PlayerAttack is sent with the hit result.
 [HarmonyPatch(typeof(BaseMelee), "PlayerAttack")]
 public static class RPG_StaffAttack
 {
@@ -288,21 +337,19 @@ public static class RPG_StaffAttack
         if (__0.connection == null) return true;
         BasePlayer p = __0.connection.player as BasePlayer;
         if (p == null || !Staff.IsHolding(p)) return true;
-        Staff.OnCast(p);
+        StaffHooks.OnSwing(p, "attack");
         return false;
     }
 }
 
-// RMB with the staff: open the spell picker instead of throwing.
-[HarmonyPatch(typeof(ThrownWeapon), "ServerThrow")]
+// RMB with the staff: DoThrow is the call that actually spawns the spear.
+[HarmonyPatch(typeof(ThrownWeapon), "DoThrow", new System.Type[] { typeof(BaseEntity.RPCMessage) })]
 public static class RPG_StaffThrow
 {
     static bool Prefix(BaseEntity.RPCMessage __0)
     {
         if (__0.connection == null) return true;
         BasePlayer p = __0.connection.player as BasePlayer;
-        if (p == null || !Staff.IsHolding(p)) return true;
-        SpellMenuUI.Open(p, RPG.GetOrCreate(p));
-        return false;
+        return !StaffHooks.OnThrow(p);
     }
 }

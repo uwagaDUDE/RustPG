@@ -143,8 +143,9 @@ public static class RpgUI
     }
 }
 
-// Mana HUD bar (left side, above vitals). Created once per connection, then only
-// the changed parts are sent with update:true, throttled. Never re-added per tick.
+
+// Vitals HUD (left side): HP bar against the REAL max (base + STR/Vitality bonuses) and MP bar.
+// Created once per connection, then only changed parts are sent with update:true, throttled.
 public static class RpgManaBar
 {
     const string RootName = "RPG_ManaBar";
@@ -153,56 +154,55 @@ public static class RpgManaBar
     sealed class Hud
     {
         public Network.Connection Conn;
+        public int LastHp;
+        public int LastHpFill;
         public int LastMana;
-        public int LastFill;
+        public int LastMpFill;
         public float LastSend;
     }
 
     static readonly Dictionary<ulong, Hud> _hud = new Dictionary<ulong, Hud>();
 
-    public static void Update(BasePlayer p, ulong id, float mana, float maxMana)
+    public static void Update(BasePlayer p, ulong id, float mana, float maxMana, float hp, float maxHp)
     {
         if (p == null || p.net == null || p.net.connection == null) return;
 
-        Hud h;
-        bool has = _hud.TryGetValue(id, out h);
-        if (maxMana <= 0f)
-        {
-            if (has) Hide(p, id);
-            return;
-        }
-
         var conn = p.net.connection;
+        int curHp = (int)hp;
+        int curHpFill = maxHp > 0f ? (int)(Mathf.Clamp01(hp / maxHp) * 100f) : 0;
         int curMana = (int)mana;
-        int curFill = (int)(Mathf.Clamp01(mana / maxMana) * 100f);
+        int curMpFill = maxMana > 0f ? (int)(Mathf.Clamp01(mana / maxMana) * 100f) : 0;
         float now = Time.realtimeSinceStartup;
 
+        Hud h;
+        bool has = _hud.TryGetValue(id, out h);
         if (!has || h.Conn != conn)
         {
             if (!has) { h = new Hud(); _hud[id] = h; }
             h.Conn = conn;
-            h.LastMana = curMana;
-            h.LastFill = curFill;
+            h.LastHp = curHp; h.LastHpFill = curHpFill;
+            h.LastMana = curMana; h.LastMpFill = curMpFill;
             h.LastSend = now;
             try
             {
                 CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("DestroyUI", conn), RootName);
-                CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", conn), BuildFull(mana, maxMana));
+                CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", conn), BuildFull(hp, maxHp, mana, maxMana));
             }
-            catch (Exception e) { RPG.Log("manabar create error: " + e.Message); }
+            catch (Exception e) { RPG.Log("hud create error: " + e.Message); }
             return;
         }
 
-        if (curMana == h.LastMana && curFill == h.LastFill) return;
+        bool changed = curHp != h.LastHp || curHpFill != h.LastHpFill || curMana != h.LastMana || curMpFill != h.LastMpFill;
+        if (!changed) return;
         if (now - h.LastSend < Throttle) return;
-        h.LastMana = curMana;
-        h.LastFill = curFill;
+        h.LastHp = curHp; h.LastHpFill = curHpFill;
+        h.LastMana = curMana; h.LastMpFill = curMpFill;
         h.LastSend = now;
         try
         {
-            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", conn), BuildUpdate(mana, maxMana));
+            CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("AddUI", conn), BuildUpdate(hp, maxHp, mana, maxMana));
         }
-        catch (Exception e) { RPG.Log("manabar update error: " + e.Message); }
+        catch (Exception e) { RPG.Log("hud update error: " + e.Message); }
     }
 
     public static void Hide(BasePlayer p, ulong id)
@@ -213,59 +213,82 @@ public static class RpgManaBar
         {
             CommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player("DestroyUI", p.net.connection), RootName);
         }
-        catch (Exception e) { RPG.Log("manabar hide error: " + e.Message); }
+        catch (Exception e) { RPG.Log("hud hide error: " + e.Message); }
     }
 
-    static string FillAnchor(float frac)
+    // Layout inside the root panel (anchors are relative to the root):
+    // HP bar on top (y 0.56..0.94), MP bar below (y 0.06..0.44).
+    static string FillBox(float y0, float y1, float frac)
     {
-        return "0.02 0.15";
+        return "\"anchormin\":\"0.02 " + RPG.Fmt(y0) + "\",\"anchormax\":\"" + RPG.Fmt(0.02f + 0.96f * Mathf.Clamp01(frac)) + " " + RPG.Fmt(y1) + "\"";
     }
 
-    static string FillMax(float frac)
+    static string Label(string text)
     {
-        return RPG.Fmt(0.02f + 0.96f * frac) + " 0.85";
+        return text.Replace("\"", "'");
     }
 
-    static string BuildFull(float mana, float maxMana)
+    static string BuildFull(float hp, float maxHp, float mana, float maxMana)
     {
-        float frac = Mathf.Clamp01(mana / maxMana);
-        StringBuilder sb = new StringBuilder(512);
+        float hpFrac = maxHp > 0f ? hp / maxHp : 0f;
+        float mpFrac = maxMana > 0f ? mana / maxMana : 0f;
+        StringBuilder sb = new StringBuilder(900);
         sb.Append("[");
         sb.Append("{\"name\":\"").Append(RootName).Append("\",\"parent\":\"Overlay\",\"components\":[");
         sb.Append("{\"type\":\"UnityEngine.UI.Image\",\"color\":\"0.05 0.05 0.08 0.65\"},");
-        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0.02 0.72\",\"anchormax\":\"0.17 0.775\"}");
+        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0.02 0.655\",\"anchormax\":\"0.17 0.775\"}");
+        sb.Append("]},");
+
+        sb.Append("{\"name\":\"RPG_HpBg\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Image\",\"color\":\"0.15 0.05 0.05 1\"},");
+        sb.Append("{\"type\":\"RectTransform\",").Append(FillBox(0.56f, 0.94f, 1f)).Append("}");
+        sb.Append("]},");
+        sb.Append("{\"name\":\"RPG_HpFill\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Image\",\"color\":\"0.85 0.15 0.15 0.95\"},");
+        sb.Append("{\"type\":\"RectTransform\",").Append(FillBox(0.56f, 0.94f, hpFrac)).Append("}");
+        sb.Append("]},");
+        sb.Append("{\"name\":\"RPG_HpTxt\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Text\",\"text\":\"HP ").Append((int)hp).Append(" / ").Append((int)maxHp);
+        sb.Append("\",\"fontSize\":12,\"align\":\"MiddleCenter\",\"color\":\"1 1 1 1\"},");
+        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0 0.56\",\"anchormax\":\"1 0.94\"}");
+        sb.Append("]},");
+
+        sb.Append("{\"name\":\"RPG_MpBg\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Image\",\"color\":\"0.05 0.07 0.15 1\"},");
+        sb.Append("{\"type\":\"RectTransform\",").Append(FillBox(0.06f, 0.44f, 1f)).Append("}");
         sb.Append("]},");
         sb.Append("{\"name\":\"RPG_ManaFill\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
         sb.Append("{\"type\":\"UnityEngine.UI.Image\",\"color\":\"0.25 0.45 1 0.95\"},");
-        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"").Append(FillAnchor(frac)).Append("\",\"anchormax\":\"").Append(FillMax(frac)).Append("\"}");
+        sb.Append("{\"type\":\"RectTransform\",").Append(FillBox(0.06f, 0.44f, mpFrac)).Append("}");
         sb.Append("]},");
         sb.Append("{\"name\":\"RPG_ManaTxt\",\"parent\":\"").Append(RootName).Append("\",\"components\":[");
         sb.Append("{\"type\":\"UnityEngine.UI.Text\",\"text\":\"MP ").Append((int)mana).Append(" / ").Append((int)maxMana);
-        sb.Append("\",\"fontSize\":13,\"align\":\"MiddleCenter\",\"color\":\"1 1 1 1\"},");
-        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0 0\",\"anchormax\":\"1 1\"}");
+        sb.Append("\",\"fontSize\":11,\"align\":\"MiddleCenter\",\"color\":\"1 1 1 1\"},");
+        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"0 0.06\",\"anchormax\":\"1 0.44\"}");
         sb.Append("]},");
-        return Finish(sb);
+        return Cui.End(sb);
     }
 
-    static string BuildUpdate(float mana, float maxMana)
+    static string BuildUpdate(float hp, float maxHp, float mana, float maxMana)
     {
-        float frac = Mathf.Clamp01(mana / maxMana);
-        StringBuilder sb = new StringBuilder(384);
+        float hpFrac = maxHp > 0f ? hp / maxHp : 0f;
+        float mpFrac = maxMana > 0f ? mana / maxMana : 0f;
+        StringBuilder sb = new StringBuilder(640);
         sb.Append("[");
+        sb.Append("{\"name\":\"RPG_HpFill\",\"parent\":\"").Append(RootName).Append("\",\"update\":true,\"components\":[");
+        sb.Append("{\"type\":\"RectTransform\",").Append(FillBox(0.56f, 0.94f, hpFrac)).Append("}");
+        sb.Append("]},");
+        sb.Append("{\"name\":\"RPG_HpTxt\",\"parent\":\"").Append(RootName).Append("\",\"update\":true,\"components\":[");
+        sb.Append("{\"type\":\"UnityEngine.UI.Text\",\"text\":\"HP ").Append((int)hp).Append(" / ").Append((int)maxHp);
+        sb.Append("\",\"fontSize\":12,\"align\":\"MiddleCenter\",\"color\":\"1 1 1 1\"}");
+        sb.Append("]},");
         sb.Append("{\"name\":\"RPG_ManaFill\",\"parent\":\"").Append(RootName).Append("\",\"update\":true,\"components\":[");
-        sb.Append("{\"type\":\"RectTransform\",\"anchormin\":\"").Append(FillAnchor(frac)).Append("\",\"anchormax\":\"").Append(FillMax(frac)).Append("\"}");
+        sb.Append("{\"type\":\"RectTransform\",").Append(FillBox(0.06f, 0.44f, mpFrac)).Append("}");
         sb.Append("]},");
         sb.Append("{\"name\":\"RPG_ManaTxt\",\"parent\":\"").Append(RootName).Append("\",\"update\":true,\"components\":[");
         sb.Append("{\"type\":\"UnityEngine.UI.Text\",\"text\":\"MP ").Append((int)mana).Append(" / ").Append((int)maxMana);
-        sb.Append("\",\"fontSize\":13,\"align\":\"MiddleCenter\",\"color\":\"1 1 1 1\"}");
+        sb.Append("\",\"fontSize\":11,\"align\":\"MiddleCenter\",\"color\":\"1 1 1 1\"}");
         sb.Append("]},");
-        return Finish(sb);
-    }
-
-    static string Finish(StringBuilder sb)
-    {
-        if (sb.Length > 0 && sb[sb.Length - 1] == ',') sb.Length = sb.Length - 1;
-        sb.Append("]");
-        return sb.ToString();
+        return Cui.End(sb);
     }
 }

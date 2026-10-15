@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
@@ -262,11 +262,13 @@ public static class Skills
     }
 }
 
-// /skills window. Rebuilt only on player actions (open, unlock, close), never per tick.
+// /skills window. Rebuilt only on player actions (open, select, unlock, close), never per tick.
+// Click a node to read it in the description panel; ОТКРЫТЬ unlocks the selected node.
 public static class SkillsUI
 {
     public const string Root = "RustPG_Skills";
     static readonly HashSet<ulong> _open = new HashSet<ulong>();
+    static readonly Dictionary<ulong, string> _selected = new Dictionary<ulong, string>();
 
     public static void Open(BasePlayer p, PlayerData d)
     {
@@ -282,10 +284,32 @@ public static class SkillsUI
         Cui.Hide(p, Root);
     }
 
+    public static void Select(BasePlayer p, PlayerData d, string id)
+    {
+        if (p == null || d == null || Skills.Get(id) == null) return;
+        _selected[d.steamId] = id;
+        if (_open.Contains(RPG.Id(p))) Cui.Show(p, Root, BuildJson(d));
+        else { _open.Add(RPG.Id(p)); Cui.Show(p, Root, BuildJson(d)); }
+    }
+
     public static void Refresh(BasePlayer p, PlayerData d)
     {
         if (p == null || !_open.Contains(RPG.Id(p))) return;
         Cui.Show(p, Root, BuildJson(d));
+    }
+
+    static string Req(PlayerData d, SkillDef def, bool ru)
+    {
+        string s = (ru ? "ур. " : "lvl ") + def.Level;
+        if (def.Str > 0) s += ru ? ", СИЛ " + def.Str : ", STR " + def.Str;
+        if (def.Agi > 0) s += ru ? ", ЛОВ " + def.Agi : ", AGI " + def.Agi;
+        if (def.Int > 0) s += ru ? ", ИНТ " + def.Int : ", INT " + def.Int;
+        if (def.Prereq != null)
+        {
+            SkillDef pre = Skills.Get(def.Prereq);
+            if (pre != null) s += ru ? ", после: " + pre.NameRu : ", after: " + pre.NameEn;
+        }
+        return s;
     }
 
     static string BuildJson(PlayerData d)
@@ -294,7 +318,9 @@ public static class SkillsUI
         StringBuilder sb = Cui.Begin();
         Cui.Panel(sb, Root, "Overlay", "0.04 0.04", "0.96 0.96", "0.07 0.07 0.1 0.97", true);
         Cui.Text(sb, "RS_Title", Root, ru ? "ДРЕВО НАВЫКОВ" : "SKILL TREE",
-                 "0 0.9 1 0.95", "0.05 0.92", "0.95 0.99", 24, "MiddleCenter");
+                 "0 0.9 1 0.95", "0.05 0.92", "0.8 0.99", 24, "MiddleCenter");
+        Cui.Button(sb, "RS_Close", Root, "rpg.skillsclose", "0.6 0.15 0.15 1", "0.88 0.93", "0.95 0.985");
+        Cui.Text(sb, "RS_CloseTxt", "RS_Close", "X", "1 1 1 1", "0 0", "1 1", 18, "MiddleCenter");
 
         string info = ru
             ? ("Уровень " + d.level + "   Доступно очков: " + Skills.Available(d) + "   Открыто: " + d.skills.Count + " / " + Skills.MaxUnlocks)
@@ -310,15 +336,45 @@ public static class SkillsUI
                      Cui.F(x0) + " 0.82", Cui.F(x0 + 0.21f) + " 0.865", 16, "MiddleCenter");
         }
 
-        for (int i = 0; i < Skills.All.Count; i++) AppendNode(sb, d, Skills.All[i], ru);
+        string sel;
+        _selected.TryGetValue(d.steamId, out sel);
+        for (int i = 0; i < Skills.All.Count; i++) AppendNode(sb, d, Skills.All[i], ru, Skills.All[i].Id == sel);
 
-        Cui.Button(sb, "RS_Close", Root, "rpg.skillsclose", "0.6 0.15 0.15 1", "0.4 0.05", "0.6 0.11");
-        Cui.Text(sb, "RS_CloseTxt", "RS_Close", ru ? "ЗАКРЫТЬ" : "CLOSE", "1 1 1 1", "0 0", "1 1", 18, "MiddleCenter");
+        // Description panel (bottom). Shows the selected node or a hint.
+        Cui.Panel(sb, "RS_Desc", Root, "0.05 0.04", "0.95 0.145", "0.13 0.13 0.17 1", false);
+        SkillDef def = Skills.Get(sel);
+        if (def == null)
+        {
+            Cui.Text(sb, "RS_DescTxt", "RS_Desc", ru ? "Нажмите на навык, чтобы увидеть описание." : "Click a skill to see its description.",
+                     "0.8 0.8 0.8 1", "0.02 0", "0.98 1", 15, "MiddleCenter");
+        }
+        else
+        {
+            bool unlocked = Skills.Has(d, def.Id);
+            string reason;
+            bool can = !unlocked && Skills.CanUnlock(d, def, out reason);
+            string status;
+            if (unlocked) status = ru ? "Статус: открыто" : "Status: unlocked";
+            else if (can) status = ru ? "Статус: можно открыть" : "Status: available";
+            else
+            {
+                Skills.CanUnlock(d, def, out reason);
+                status = (ru ? "Нельзя открыть: " : "Locked: ") + reason;
+            }
+            string text = (ru ? def.NameRu : def.NameEn) + "  [" + Req(d, def, ru) + "]\n"
+                        + (ru ? def.DescRu : def.DescEn) + "\n" + status;
+            Cui.Text(sb, "RS_DescTxt", "RS_Desc", text, "1 1 1 1", "0.02 0", "0.74 1", 14, "MiddleLeft");
+
+            string btnColor = unlocked ? "0.3 0.3 0.3 1" : (can ? "0.2 0.55 0.2 1" : "0.28 0.28 0.32 1");
+            string btnText = unlocked ? (ru ? "ОТКРЫТО" : "UNLOCKED") : (ru ? "ОТКРЫТЬ" : "UNLOCK");
+            Cui.Button(sb, "RS_Unlock", Root, "rpg.skill " + def.Id, btnColor, "0.76 0.065", "0.93 0.12");
+            Cui.Text(sb, "RS_UnlockTxt", "RS_Unlock", btnText, "1 1 1 1", "0 0", "1 1", 16, "MiddleCenter");
+        }
 
         return Cui.End(sb);
     }
 
-    static void AppendNode(StringBuilder sb, PlayerData d, SkillDef def, bool ru)
+    static void AppendNode(StringBuilder sb, PlayerData d, SkillDef def, bool ru, bool selected)
     {
         float x0 = 0.05f + def.Branch * 0.23f;
         float top = 0.79f - def.Row * 0.13f;
@@ -332,15 +388,11 @@ public static class SkillsUI
             string reason;
             color = Skills.CanUnlock(d, def, out reason) ? "0.2 0.4 0.75 1" : "0.28 0.28 0.32 1";
         }
+        if (selected) color = "0.85 0.6 0.1 1";
 
-        string req = "Lv" + def.Level;
-        if (def.Str > 0) req += " STR" + def.Str;
-        if (def.Agi > 0) req += " AGI" + def.Agi;
-        if (def.Int > 0) req += " INT" + def.Int;
-        string label = (unlocked ? "[+] " : "") + (ru ? def.NameRu : def.NameEn) + "\n" + req;
-
+        string label = (unlocked ? "[+] " : "") + (ru ? def.NameRu : def.NameEn) + "\n" + "Lv" + def.Level;
         string nodeName = "RS_" + def.Id;
-        Cui.Button(sb, nodeName, Root, "rpg.skill " + def.Id, color,
+        Cui.Button(sb, nodeName, Root, "rpg.skillview " + def.Id, color,
                    Cui.F(x0) + " " + Cui.F(bottom), Cui.F(x0 + 0.21f) + " " + Cui.F(top));
         Cui.Text(sb, nodeName + "_T", nodeName, label, "1 1 1 1", "0.03 0", "0.97 1", 12, "MiddleCenter");
     }

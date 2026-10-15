@@ -23,6 +23,7 @@ public class RPGConfig
     public float xpPerGatherHit = 1f;
     public float xpPerPlayerKill = 50f;
     public float xpPerNpcKill = 25f;
+    public float respawnHealthFraction = 0.5f;
 }
 
 public class PlayerData
