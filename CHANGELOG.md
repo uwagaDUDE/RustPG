@@ -1,10 +1,27 @@
 ﻿# Changelog
 
+## [0.4.4] - 2026-10-15
+### Added
+- Fire bolt and fire blast ignite living players, NPCs and animals for 5 seconds: 2 base Heat damage per second.
+- Attached onfire effect, non-stacking duration refresh, latest caster damage attribution and cleanup on death.
+- Compiled against installed Rust assemblies; in-game visual and damage verification pending.
+
+
+## [0.4.3] - 2026-10-15
+### Fixed
+- Staff input moved to BasePlayer.OnReceiveTick; melee hit reports no longer cast spells.
+- Spear throw blocked at the actual BaseMelee.CLEntityThrow RPC, instead of ThrownWeapon.DoThrow.
+- Replaced invisible hitscan with a networked moving fireball and swept collision checks; solid terrain blocks spells.
+- Vanilla fire damage/spreading disabled for staff bolts; mana/cooldown start only after successful bolt creation.
+- Static verification and compilation passed; in-game acceptance remains pending server restart.
+
+
 ## [0.4.2] - 2026-10-15
 ### Fixed
 - Staff spells cast on air swings (hook BaseMelee.ServerUse), not only on hits. A dedupe window (0.25 s) keeps one swing = one cast
 - Staff RMB no longer throws the spear: blocked at ThrownWeapon.DoThrow, which is the call that spawns it
-- Respawn/spawn health is 50% of the real max (BaseCombatEntity.StartHealth postfix, espawnHealthFraction in config.json)
+- Respawn/spawn health is 50% of the real max (BaseCombatEntity.StartHealth postfix, 
+espawnHealthFraction in config.json)
 - Vitals HUD: HP bar against the real max (with STR and Vitality bonuses), MP bar below it
 
 ### Added

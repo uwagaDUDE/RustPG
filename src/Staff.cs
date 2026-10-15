@@ -4,7 +4,7 @@ using HarmonyLib;
 using RustBuddy;
 using UnityEngine;
 
-// Wooden staff: a wooden.spear marked by Item.name.
+// Wooden staff: a spear.wooden marked by Item.name.
 //   LMB  - casts the selected spell instead of melee.
 //   RMB  - opens the spell picker (the throw is never performed while holding the staff).
 // Basic spells: 1 = Fire bolt, 2 = Heal, 3 = Ward. Selection is kept in memory.
@@ -149,7 +149,7 @@ public static class Staff
 
     static readonly Dictionary<ulong, float> _lastSwing = new Dictionary<ulong, float>();
 
-    // One swing = one cast. Ignores a second hook firing for the same swing.
+    // Brief debounce for repeated input; melee RPCs never trigger casts.
     public static void TryCast(BasePlayer p)
     {
         ulong sid = RPG.Id(p);
@@ -183,7 +183,7 @@ public static class Staff
 
         switch (sp)
         {
-            case SpellFire: CastFire(p, d); break;
+            case SpellFire: if (!CastFire(p, d)) return; break;
             case SpellHeal: CastHeal(p, d); break;
             default: CastWard(d); break;
         }
@@ -193,27 +193,26 @@ public static class Staff
         RPG.MarkDirty(d);
     }
 
-    static void CastFire(BasePlayer p, PlayerData d)
+    static bool CastFire(BasePlayer p, PlayerData d)
     {
         float damage = FireDamage * (Skills.Has(d, "mage_power") ? 1.5f : 1f);
-        Ray r = p.eyes.HeadRay();
-        RaycastHit[] hits = Physics.RaycastAll(r, FireRange, ~0, QueryTriggerInteraction.Ignore);
-        Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-        for (int i = 0; i < hits.Length; i++)
+        return StaffBolt.Launch(p, damage, Skills.Has(d, "mage_blast"), FireRange);
+    }
+
+    public static void FireImpact(BasePlayer caster, BaseCombatEntity target, Vector3 point, float damage, bool blast)
+    {
+        if (caster == null) return;
+        if (target != null && target != caster)
         {
-            if (hits[i].collider == null) continue;
-            BaseCombatEntity t = hits[i].collider.GetComponentInParent<BaseCombatEntity>();
-            if (t == null || t == p) continue;
-
             HitInfo hi = new HitInfo();
-            hi.Initiator = p;
-            hi.HitEntity = t;
+            hi.Initiator = caster;
+            hi.HitEntity = target;
+            hi.HitPositionWorld = point;
             hi.damageTypes.Set(Rust.DamageType.Heat, damage);
-            t.Hurt(hi);
-
-            if (Skills.Has(d, "mage_blast")) Splash(p, t, hits[i].point, damage * SplashFactor);
-            return;
+            target.Hurt(hi);
+            StaffBurn.Apply(caster, target);
         }
+        if (blast) Splash(caster, target, point, damage * SplashFactor);
     }
 
     // Fire blast: every other combat entity in the radius takes a share of the bolt damage.
@@ -235,6 +234,7 @@ public static class Staff
             h.HitEntity = e;
             h.damageTypes.Set(Rust.DamageType.Heat, damage);
             e.Hurt(h);
+            StaffBurn.Apply(caster, e);
         }
     }
 
@@ -252,18 +252,80 @@ public static class Staff
     }
 }
 
+// One burn per living character. Reapplication refreshes duration, never damage rate.
+public sealed class StaffBurn : MonoBehaviour
+{
+    const float Duration = 5f;
+    const float TickDamage = 2f;
+    const string EffectPath = "assets/bundled/prefabs/fx/player/onfire.prefab";
+    BaseCombatEntity victim;
+    BasePlayer attacker;
+    float until, nextTick;
+
+    public static void Apply(BasePlayer caster, BaseCombatEntity target)
+    {
+        if (caster == null || target == null || target.IsDead() ||
+            !(target is BasePlayer || target is BaseNpc || target.IsNpc)) return;
+        StaffBurn burn = target.GetComponent<StaffBurn>();
+        if (burn == null)
+        {
+            burn = target.gameObject.AddComponent<StaffBurn>();
+            burn.victim = target;
+            burn.nextTick = Time.realtimeSinceStartup + 1f;
+        }
+        burn.attacker = caster;
+        burn.until = Time.realtimeSinceStartup + Duration;
+        burn.ShowFire();
+    }
+
+    void ShowFire()
+    {
+        // Attached effect follows the target; no damaging ground fire is created.
+        Effect.server.Run(EffectPath, victim, 0, Vector3.up * 0.8f, Vector3.up);
+    }
+
+    void Update()
+    {
+        if (victim == null || victim.IsDead()) { Destroy(this); return; }
+        float now = Time.realtimeSinceStartup;
+        // Process the last tick at the duration boundary before expiring.
+        while (nextTick <= now && nextTick <= until)
+        {
+            nextTick += 1f;
+            HitInfo hit = new HitInfo();
+            hit.Initiator = attacker;
+            hit.HitEntity = victim;
+            hit.HitPositionWorld = victim.transform.position;
+            hit.damageTypes.Set(Rust.DamageType.Heat, TickDamage);
+            victim.Hurt(hit);
+            if (victim == null || victim.IsDead()) { Destroy(this); return; }
+            if (nextTick <= until) ShowFire();
+        }
+        if (now >= until) Destroy(this);
+    }
+}
+
 // Spell picker (RMB with the staff). Rebuilt on open and on selection only.
 public static class SpellMenuUI
 {
     public const string Root = "RustPG_Spell";
+    static readonly Dictionary<ulong, BasePlayer> OpenPlayers = new Dictionary<ulong, BasePlayer>();
+
+    public static bool IsOpen(BasePlayer p)
+    {
+        BasePlayer owner;
+        return OpenPlayers.TryGetValue(RPG.Id(p), out owner) && owner == p;
+    }
 
     public static void Open(BasePlayer p, PlayerData d)
     {
+        OpenPlayers[RPG.Id(p)] = p;
         Cui.Show(p, Root, BuildJson(d));
     }
 
     public static void Close(BasePlayer p)
     {
+        OpenPlayers.Remove(RPG.Id(p));
         Cui.Hide(p, Root);
     }
 
@@ -291,65 +353,118 @@ public static class SpellMenuUI
     }
 }
 
-// Every swing with the staff goes through here. Two hooks can fire for the same swing
-// (BaseMelee.ServerUse for air and hits, PlayerAttack for hits), so the cast is deduplicated.
-public static class StaffHooks
+// Player input, not melee hit reports, is the only source of player casts.
+[HarmonyPatch(typeof(BasePlayer), "OnReceiveTick")]
+public static class RPG_StaffInput
 {
-    static bool _loggedUse, _loggedAttack, _loggedThrow;
-
-    public static void OnSwing(BasePlayer p, string source)
+    static bool logged;
+    static void Postfix(BasePlayer __instance, PlayerTick __0)
     {
-        if (p == null || !Staff.IsHolding(p)) return;
-        if (source == "use" && !_loggedUse) { _loggedUse = true; RPG.Log("staff: ServerUse hook active"); }
-        if (source == "attack" && !_loggedAttack) { _loggedAttack = true; RPG.Log("staff: PlayerAttack hook active"); }
-        Staff.TryCast(p);
-    }
-
-    public static bool OnThrow(BasePlayer p)
-    {
-        if (p == null || !Staff.IsHolding(p)) return false;
-        if (!_loggedThrow) { _loggedThrow = true; RPG.Log("staff: DoThrow hook active (RMB opens spell menu)"); }
-        SpellMenuUI.Open(p, RPG.GetOrCreate(p));
-        return true;
+        BasePlayer p = __instance;
+        if (__0 == null || __0.inputState == null || p == null || p.IsNpc ||
+            p.IsDead() || p.IsSleeping() || p.IsWounded() || p.IsReceivingSnapshot || !Staff.IsHolding(p)) return;
+        InputState input = p.serverInput;
+        if (input == null) return;
+        if (!logged) { logged = true; RPG.Log("staff: input hook active (LMB cast / RMB picker, v0.4.3)"); }
+        if (input.WasJustPressed(BUTTON.FIRE_SECONDARY))
+            SpellMenuUI.Open(p, RPG.GetOrCreate(p));
+        else if (input.WasJustPressed(BUTTON.FIRE_PRIMARY) && !SpellMenuUI.IsOpen(p) && !RPG.UiOpen.Contains(RPG.Id(p)))
+            Staff.TryCast(p);
     }
 }
 
-// Air swing: the server calls ServerUse for every use of a held melee item.
+// Hit RPCs can arrive after the input tick. Suppress them without casting twice.
+[HarmonyPatch(typeof(BaseMelee), "PlayerAttack")]
+public static class RPG_StaffAttack
+{
+    static bool Prefix(BaseMelee __instance)
+    {
+        return !Staff.IsStaff(__instance.GetItem());
+    }
+}
+
 [HarmonyPatch(typeof(BaseMelee), "ServerUse", new System.Type[] { typeof(HeldEntityServerUseParams) })]
 public static class RPG_StaffServerUse
 {
     static bool Prefix(BaseMelee __instance)
     {
-        BasePlayer p = null;
-        try { p = __instance.GetOwnerPlayer(); } catch (Exception) { }
-        if (p == null || !Staff.IsHolding(p)) return true;
-        StaffHooks.OnSwing(p, "use");
-        return false;
+        return !Staff.IsStaff(__instance.GetItem());
     }
 }
 
-// Hit swing: PlayerAttack is sent with the hit result.
-[HarmonyPatch(typeof(BaseMelee), "PlayerAttack")]
-public static class RPG_StaffAttack
-{
-    static bool Prefix(BaseEntity.RPCMessage __0)
-    {
-        if (__0.connection == null) return true;
-        BasePlayer p = __0.connection.player as BasePlayer;
-        if (p == null || !Staff.IsHolding(p)) return true;
-        StaffHooks.OnSwing(p, "attack");
-        return false;
-    }
-}
-
-// RMB with the staff: DoThrow is the call that actually spawns the spear.
-[HarmonyPatch(typeof(ThrownWeapon), "DoThrow", new System.Type[] { typeof(BaseEntity.RPCMessage) })]
+// Spears use BaseMelee.CLEntityThrow, not ThrownWeapon.DoThrow.
+[HarmonyPatch(typeof(BaseMelee), "CLEntityThrow")]
 public static class RPG_StaffThrow
 {
-    static bool Prefix(BaseEntity.RPCMessage __0)
+    static bool Prefix(BaseMelee __instance)
     {
-        if (__0.connection == null) return true;
-        BasePlayer p = __0.connection.player as BasePlayer;
-        return !StaffHooks.OnThrow(p);
+        return !Staff.IsStaff(__instance.GetItem());
+    }
+}
+
+// A networked vanilla fire visual; collision and damage are controlled by RustPG.
+public sealed class StaffBolt : MonoBehaviour
+{
+    const string Prefab = "assets/prefabs/weapons/flamethrower/flamethrower_fireball.prefab";
+    const float Speed = 25f;
+    FireBall visual;
+    BasePlayer caster;
+    Vector3 position, direction;
+    float damage, remaining;
+    bool blast;
+
+    public static bool Launch(BasePlayer player, float damage, bool blast, float range)
+    {
+        Ray ray = player.eyes.HeadRay();
+        BaseEntity entity = GameManager.server.CreateEntity(Prefab, ray.origin, Quaternion.identity);
+        FireBall fire = entity as FireBall;
+        if (fire == null)
+        {
+            if (entity != null) entity.Kill();
+            RPG.Log("staff: fireball prefab unavailable; cast cancelled without mana cost");
+            return false;
+        }
+        fire.enableSaving = false;
+        fire.SetCreatorEntity(player);
+        fire.Spawn();
+        // Disable vanilla area damage, spreading and lifetime; this bolt owns its lifetime.
+        fire.CancelInvoke();
+        Rigidbody body = fire.GetComponent<Rigidbody>();
+        if (body != null) { body.useGravity = false; body.isKinematic = true; }
+        foreach (Collider col in fire.GetComponentsInChildren<Collider>()) col.enabled = false;
+        StaffBolt bolt = fire.gameObject.AddComponent<StaffBolt>();
+        bolt.visual = fire;
+        bolt.caster = player;
+        bolt.position = ray.origin;
+        bolt.direction = ray.direction.normalized;
+        bolt.damage = damage;
+        bolt.blast = blast;
+        bolt.remaining = range;
+        return true;
+    }
+
+    void FixedUpdate()
+    {
+        if (visual == null) { Destroy(this); return; }
+        if (caster == null || remaining <= 0f) { visual.Kill(); return; }
+        float step = Mathf.Min(Speed * Time.fixedDeltaTime, remaining);
+        RaycastHit[] hits = Physics.RaycastAll(position, direction, step, ~0, QueryTriggerInteraction.Ignore);
+        Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider col = hits[i].collider;
+            if (col == null || col.GetComponentInParent<BaseEntity>() == visual) continue;
+            BaseCombatEntity target = col.GetComponentInParent<BaseCombatEntity>();
+            if (target == caster) continue;
+            // Any solid geometry stops the bolt, including terrain without a combat entity.
+            Staff.FireImpact(caster, target, hits[i].point, damage, blast);
+            visual.Kill();
+            return;
+        }
+        position += direction * step;
+        remaining -= step;
+        visual.transform.position = position;
+        visual.SendNetworkUpdate();
+        if (remaining <= 0f) visual.Kill();
     }
 }
