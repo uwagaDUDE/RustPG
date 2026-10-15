@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0] - 2026-10-15
+### Added
+- Wooden Staff (`wooden.spear` marked `RPG Staff`): LMB casts, RMB throw blocked
+- Basic spells: Fire bolt (1), Heal (2), Ward (3), selected via `/spell 1|2|3`
+- Admin: `/rpgstaff give <name>`
+- Hooks: `BaseMelee.PlayerAttack`, `ThrownWeapon.ServerThrow` (staff only)
+- Ward reduces incoming damage in `RPG_OnAttacked`
+
+### Notes
+- Not yet tested in-game (no server restart in this step)
+
 ## [0.2.0] - 2026-10-15
 ### Added
 - RU/EN language switch in `/rpg` (`rpg.lang`, per player, stored in data)

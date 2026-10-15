@@ -60,6 +60,37 @@ public static class RPG_Chat
             }
             return false;
         }
+        if (head == "/spell")
+        {
+            int sid;
+            if (tok.Length < 2 || !int.TryParse(tok[1], out sid)) { Staff.SetSpell(player, 0); return false; }
+            Staff.SetSpell(player, sid);
+            return false;
+        }
+        if (head == "/rpgstaff")
+        {
+            Network.Connection sc = null;
+            try { sc = __1.Connection; } catch (Exception) { }
+            if (!RPG.IsAdmin(player, sc))
+            {
+                player.ChatMessage("[RustPG] Admin only.");
+                return false;
+            }
+            // /rpgstaff give <name>
+            if (tok.Length < 3 || tok[1] != "give")
+            {
+                player.ChatMessage("[RustPG] Usage: /rpgstaff give <name>");
+                return false;
+            }
+            BasePlayer st = RPG.FindPlayer(tok[2]);
+            if (st == null) { player.ChatMessage("[RustPG] Player not found."); return false; }
+            Item staffItem = Staff.Create();
+            if (staffItem == null) { player.ChatMessage("[RustPG] Failed to create staff item."); return false; }
+            st.GiveItem(staffItem);
+            player.ChatMessage("[RustPG] Staff given to " + st.displayName + ".");
+            st.ChatMessage("[RustPG] You received a Wooden Staff. Left click casts; /spell 1|2|3.");
+            return false;
+        }
         if (head == "/tk.reset")
         {
             Network.Connection rc = null;
@@ -274,6 +305,7 @@ public static class RPG_OnAttacked
             PlayerData vd = RPG.GetOrCreate(victim);
             float armor = Mathf.Min(RPG.Config.armorCap, vd.agi * RPG.Config.armorPerAgi);
             if (armor > 0f) info.damageTypes.ScaleAll(1f - armor);
+            if (Staff.HasWard(victim)) info.damageTypes.ScaleAll(Staff.WardDamageMult);
         }
 
         if (attacker != null && __instance is BaseCombatEntity)

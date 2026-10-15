@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Deploy
 )
 
@@ -26,6 +26,7 @@ $refs = @(
     "/r:$game\Rust.Global.dll",
     "/r:$game\UnityEngine.CoreModule.dll",
     "/r:$game\UnityEngine.AnimationModule.dll",
+    "/r:$game\UnityEngine.PhysicsModule.dll",
     "/r:$game\UnityEngine.dll",
     "/r:$game\UnityEngine.UI.dll",
     "/r:$game\Newtonsoft.Json.dll"
