@@ -1,30 +1,45 @@
 # RustPG
 
-Rust server RPG plugin for RustBuddy framework.
+RPG-система для RustBuddy (Rust Dedicated, Harmony).
 
-## Features
-- Character stats: Strength, Agility, Intelligence
-- XP system with levels
-- Mana pool
-- CUI interface (`!rpg`)
+## Характеристики
+- **СИЛА (STR)**: +5 HP за очко, +0.1% урона ближнего боя за очко.
+- **ЛОВКОСТЬ (AGI)**: +0.5% брони за очко (потолок 75%), +0.1% урона дальнего боя за очко.
+- **ИНТЕЛЛЕКТ (INT)**: +5 макс. маны за очко, регенерация маны растёт с INT. Эффект на магию пока не реализован.
 
-## Stats (v0.1)
-- **Strength**: +5 HP/pt, +0.1% melee damage/pt
-- **Agility**: +0.5% armor/pt (cap 75%), +0.1% ranged damage/pt
-- **Intelligence**: +5 mana/pt
+Старт: 0/0/0, 5 свободных очков. Уровень N -> N+1 стоит N*100 XP, каждый уровень даёт +1 очко.
 
-## Commands
-| Command | Description |
-|---------|-------------|
-| `!rpg` | Open RPG interface |
-| `!stats` | Show current stats in chat |
-| `rpg.xp give <name> <amount>` | Give XP (admin) |
-| `rpg.xp take <name> <amount>` | Take XP (admin) |
+## Игрок
+| Команда | Что делает |
+|---|---|
+| `/rpg` | Открыть окно характеристик (кнопки `+`, `EN/RU`, `ЗАКРЫТЬ`) |
+| `/stats` | Показать уровень, опыт, характеристики и HP/ману в чате |
 
-## Install
-1. Build: `powershell -ExecutionPolicy Bypass -File build.ps1`
-2. Deploy: `powershell -ExecutionPolicy Bypass -File build.ps1 -Deploy`
-3. Restart server or reload plugins
+Мана-полоска (синяя) выводится над HUD слева и обновляется сама.
 
-## Build
-Requires .NET Framework 4.x csc. References: RustBuddy, Assembly-CSharp, Rust.Data, Facepunch.*, UnityEngine.*, Newtonsoft.Json.
+## Админ
+Админ = `authLevel > 0`, `BasePlayer.IsAdmin`, или SteamID владельца стенда.
+
+| Команда | Что делает |
+|---|---|
+| `/rpglvl give <ник> <n>` | Выдать n уровней (+n свободных очков, опыт сохраняется) |
+| `/rpglvl take <ник> <n>` | Забрать n уровней (сначала свободные очки, затем откат вложенных статов; опыт сбрасывается в 0) |
+| `/rpgxp give <ник> <n>` | Выдать n опыта (с пересчётом уровней) |
+| `/rpgxp take <ник> <n>` | Забрать n опыта (с откатом уровней) |
+| `/tk.reset [ник]` | Вернуть вложенные очки STR/AGI/INT в свободные. Уровень не меняется |
+
+Ник можно указать как отображаемое имя или SteamID.
+
+## Консоль (F1 / RCON)
+`rpg.add str|agi|intel`, `rpg.close`, `rpg.lang`, `rpg.xp give|take <ник> <n>`, `rpg.reset <ник>`.
+
+## Данные
+- `rustbuddy/data/rustpg/config.json` - формулы и награды (создаётся при первом запуске).
+- `rustbuddy/data/rustpg/<steamid>.json` - прогресс игрока. Сохраняется сразу при левел-апе и админ-командах, остальное раз в 30 секунд.
+
+## Сборка
+```
+powershell -ExecutionPolicy Bypass -File build.ps1 -Deploy
+```
+Нужен .NET Framework csc (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`), C# 5.
+Ссылки: RustBuddy, Assembly-CSharp, Rust.Data, Facepunch.*, UnityEngine.*, Newtonsoft.Json.

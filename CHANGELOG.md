@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0] - 2026-10-15
+### Added
+- RU/EN language switch in `/rpg` (`rpg.lang`, per player, stored in data)
+- Mana HUD bar above vitals (created once per connection, updated in place)
+- Admin: `/rpglvl give|take <name> <n>` (levels), `/tk.reset [name]` (return spent points)
+- `/stats` localized
+
+### Fixed
+- `/rpg` buttons did nothing: console parser split by space instead of `rpg.<sub>`
+- Malformed CUI JSON (trailing comma) in all builders
+- Window stacked on language change and on every metabolism tick (FPS drop)
+- Chat routing: `/rpgxp` and `/rpglvl` were caught by the `/rpg` branch; now routed by exact first token
+
+### Changed
+- `Id()` reads `UserIDString` first; reflection only as fallback
+- XP gains and mana ticks mark data dirty; saved every 30s (level-ups and admin commands save immediately)
+- `LastAttacker` is pruned every 30s
+
 ## [0.1.0] - 2026-10-15
 ### Added
 - Character stats system (Strength, Agility, Intelligence)

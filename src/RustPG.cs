@@ -304,6 +304,51 @@ public static class RPG
         for (int i = 0; i < rm.Count; i++) LastAttacker.Remove(rm[i]);
     }
 
+    // Admin: grant n levels. Each level gives +1 free point. XP progress is kept.
+    public static void GiveLevels(BasePlayer p, PlayerData d, int n)
+    {
+        if (d == null || n <= 0) return;
+        d.level += n;
+        d.freePoints += n;
+        Save(d);
+        if (p != null)
+        {
+            if (UiOpen.Contains(Id(p))) RpgUI.Send(p, d);
+        }
+    }
+
+    // Admin: remove n levels (min level 1). Free points go first, then spent stats are rolled back.
+    // XP progress is reset to 0 on the resulting level.
+    public static int TakeLevels(BasePlayer p, PlayerData d, int n)
+    {
+        if (d == null || n <= 0) return 0;
+        int taken = 0;
+        while (taken < n && d.level > 1)
+        {
+            d.level--;
+            taken++;
+            if (d.freePoints > 0) d.freePoints--;
+            else if (d.spentOrder.Count > 0)
+            {
+                string last = d.spentOrder[d.spentOrder.Count - 1];
+                d.spentOrder.RemoveAt(d.spentOrder.Count - 1);
+                if (last == "str") d.str = Math.Max(0, d.str - 1);
+                else if (last == "agi") d.agi = Math.Max(0, d.agi - 1);
+                else if (last == "intel") d.intel = Math.Max(0, d.intel - 1);
+            }
+        }
+        d.xp = 0f;
+        float maxMp = MaxMana(d);
+        if (d.mana > maxMp) d.mana = maxMp;
+        Save(d);
+        if (p != null)
+        {
+            ApplyStats(p, d);
+            if (UiOpen.Contains(Id(p))) RpgUI.Send(p, d);
+        }
+        return taken;
+    }
+
     // Available points = start + one per level above 1. Stats go back to 0.
     public static void Respec(BasePlayer p, PlayerData d)
     {

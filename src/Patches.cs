@@ -15,14 +15,52 @@ public static class RPG_Chat
         string text = __1.GetString(0, "");
         if (string.IsNullOrEmpty(text)) return true;
 
-        if (text.StartsWith("!rpg") || text.StartsWith("/rpg"))
+        // Route by exact first token. StartsWith("/rpg") would also catch /rpglvl, /rpgxp, etc.
+        string[] tok = text.Split(' ');
+        string head = tok[0].ToLowerInvariant();
+
+        if (head == "/rpg" || head == "!rpg")
         {
             PlayerData d = RPG.GetOrCreate(player);
             RPG.UiOpen.Add(RPG.Id(player));
             RpgUI.Send(player, d);
             return false;
         }
-        if (text.StartsWith("/tk.reset"))
+        if (head == "/rpglvl")
+        {
+            Network.Connection lc = null;
+            try { lc = __1.Connection; } catch (Exception) { }
+            if (!RPG.IsAdmin(player, lc))
+            {
+                player.ChatMessage("[RustPG] Admin only.");
+                return false;
+            }
+            // /rpglvl give|take <name> <n>
+            if (tok.Length < 4 || (tok[1] != "give" && tok[1] != "take"))
+            {
+                player.ChatMessage("[RustPG] Usage: /rpglvl give|take <name> <n>");
+                return false;
+            }
+            BasePlayer target = RPG.FindPlayer(tok[2]);
+            if (target == null) { player.ChatMessage("[RustPG] Player not found."); return false; }
+            int n;
+            if (!int.TryParse(tok[3], out n) || n <= 0 || n > 1000) { player.ChatMessage("[RustPG] Bad number (1..1000)."); return false; }
+            PlayerData ld = RPG.GetOrCreate(target);
+            if (tok[1] == "give")
+            {
+                RPG.GiveLevels(target, ld, n);
+                player.ChatMessage("[RustPG] Gave " + n + " level(s) to " + target.displayName + ". Now level " + ld.level + ".");
+                target.ChatMessage("[RustPG] You received " + n + " level(s). Now level " + ld.level + ".");
+            }
+            else
+            {
+                int taken = RPG.TakeLevels(target, ld, n);
+                player.ChatMessage("[RustPG] Took " + taken + " level(s) from " + target.displayName + ". Now level " + ld.level + ".");
+                target.ChatMessage("[RustPG] Lost " + taken + " level(s). Now level " + ld.level + ".");
+            }
+            return false;
+        }
+        if (head == "/tk.reset")
         {
             Network.Connection rc = null;
             try { rc = __1.Connection; } catch (Exception) { }
@@ -43,7 +81,7 @@ public static class RPG_Chat
             player.ChatMessage("[RustPG] Points reset for " + target.displayName + ". Free points: " + td.freePoints);
             return false;
         }
-        if (text.StartsWith("!stats") || text.StartsWith("/stats"))
+        if (head == "!stats" || head == "/stats")
         {
             PlayerData d = RPG.GetOrCreate(player);
             bool ru = RPG.LangOf(d) == "ru";
@@ -63,7 +101,7 @@ public static class RPG_Chat
             }
             return false;
         }
-        if (text.StartsWith("!rpgxp") || text.StartsWith("/rpgxp"))
+        if (head == "!rpgxp" || head == "/rpgxp")
         {
             Network.Connection chatConn = null;
             try { chatConn = __1.Connection; } catch (Exception) { }
