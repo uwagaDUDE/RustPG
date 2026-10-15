@@ -38,6 +38,7 @@ public class PlayerData
     public float mana = 0f;
     public string lang = "ru";
     public List<string> spentOrder = new List<string>();
+    public List<string> skills = new List<string>();
 }
 
 public static class RPG
@@ -91,6 +92,7 @@ public static class RPG
         if (d.spentOrder == null) d.spentOrder = new List<string>();
         if (d.freePoints < 0) d.freePoints = 0;
         if (string.IsNullOrEmpty(d.lang)) d.lang = "ru";
+        if (d.skills == null) d.skills = new List<string>();
         Players[id] = d;
         return d;
     }
@@ -114,7 +116,9 @@ public static class RPG
 
     public static float MaxHealthBonus(PlayerData d)
     {
-        return d.str * Config.hpPerStr;
+        float bonus = d.str * Config.hpPerStr;
+        if (Skills.Has(d, "util_vitality")) bonus += 25f;
+        return bonus;
     }
 
     public static void AddXp(BasePlayer p, PlayerData d, float amount)
@@ -133,6 +137,10 @@ public static class RPG
         {
             Save(d);
             p.ChatMessage("[RustPG] Level up! Now level " + d.level + ". Free points: " + d.freePoints);
+            if (d.level % Skills.LevelsPerPoint == 0)
+                p.ChatMessage(d.lang == "en"
+                    ? "[RustPG] Skill point earned. Open /skills."
+                    : "[RustPG] Получено очко навыка. Откройте /skills.");
             if (UiOpen.Contains(RPG.Id(p))) RpgUI.Send(p, d);
         }
         else
@@ -174,6 +182,7 @@ public static class RPG
                 else break;
             }
         }
+        Skills.Validate(d);
         Save(d);
         if (target != null && UiOpen.Contains(RPG.Id(target))) RpgUI.Send(target, d);
         return true;
@@ -338,6 +347,7 @@ public static class RPG
             }
         }
         d.xp = 0f;
+        Skills.Validate(d);
         float maxMp = MaxMana(d);
         if (d.mana > maxMp) d.mana = maxMp;
         Save(d);
@@ -358,6 +368,7 @@ public static class RPG
         d.agi = 0;
         d.intel = 0;
         d.spentOrder.Clear();
+        Skills.Validate(d);
         float maxMp = MaxMana(d);
         if (d.mana > maxMp) d.mana = maxMp;
         Save(d);

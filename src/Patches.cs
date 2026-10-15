@@ -60,6 +60,16 @@ public static class RPG_Chat
             }
             return false;
         }
+        if (head == "/skills")
+        {
+            SkillsUI.Open(player, RPG.GetOrCreate(player));
+            return false;
+        }
+        if (head == "/dash")
+        {
+            Skills.Dash(player, RPG.GetOrCreate(player));
+            return false;
+        }
         if (head == "/spell")
         {
             int sid;
@@ -254,6 +264,7 @@ public static class RPG_Console
                 td.str = 0; td.agi = 0; td.intel = 0;
                 if (td.spentOrder == null) td.spentOrder = new System.Collections.Generic.List<string>();
                 td.spentOrder.Clear();
+                Skills.Validate(td);
                 RPG.Save(td);
                 RPG.ApplyStats(target, td);
                 if (RPG.UiOpen.Contains(RPG.Id(target))) RpgUI.Send(target, td);
@@ -261,7 +272,36 @@ public static class RPG_Console
             __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "Reset", null);
             return false;
         }
-        __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "rpg: add/close/lang/xp/reset", null);
+        if (sub == "spell" && player != null)
+        {
+            int sn;
+            if (sp.Length > 1 && int.TryParse(sp[1], out sn)) Staff.SetSpell(player, sn);
+            SpellMenuUI.Close(player);
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
+            return false;
+        }
+        if (sub == "spellclose" && player != null)
+        {
+            SpellMenuUI.Close(player);
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
+            return false;
+        }
+        if (sub == "skill" && player != null)
+        {
+            PlayerData sd = RPG.GetOrCreate(player);
+            string msg;
+            Skills.TryUnlock(player, sd, sp.Length > 1 ? sp[1] : "", out msg);
+            player.ChatMessage("[RustPG] " + msg);
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
+            return false;
+        }
+        if (sub == "skillsclose" && player != null)
+        {
+            SkillsUI.Close(player);
+            __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
+            return false;
+        }
+        __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "rpg: add/close/lang/xp/reset/spell/skill", null);
         return false;
     }
 }
@@ -287,14 +327,28 @@ public static class RPG_OnAttacked
         if (attacker != null && attacker != __instance)
         {
             PlayerData ad = RPG.GetOrCreate(attacker);
-            if (info.Weapon is BaseMelee)
+            bool melee = false;
+            bool ranged = false;
+            try
+            {
+                melee = info.Weapon is BaseMelee;
+                ranged = !melee && info.IsProjectile();
+            }
+            catch (Exception) { }
+
+            if (melee)
             {
                 float mult = 1f + ad.str * RPG.Config.meleeDamagePerStr;
+                if (Skills.Has(ad, "war_power")) mult += 0.15f;
                 info.damageTypes.ScaleAll(mult);
+                if (Skills.Has(ad, "war_lifesteal"))
+                    attacker.SetHealth(Mathf.Min(attacker.MaxHealth(), attacker.health + 3f));
             }
-            else if (info.IsProjectile())
+            else if (ranged)
             {
                 float mult = 1f + ad.agi * RPG.Config.rangedDamagePerAgi;
+                if (Skills.Has(ad, "hunt_aim")) mult += 0.15f;
+                if (Skills.Has(ad, "hunt_crit") && UnityEngine.Random.value < 0.15f) mult *= 1.5f;
                 info.damageTypes.ScaleAll(mult);
             }
         }
@@ -305,7 +359,8 @@ public static class RPG_OnAttacked
             PlayerData vd = RPG.GetOrCreate(victim);
             float armor = Mathf.Min(RPG.Config.armorCap, vd.agi * RPG.Config.armorPerAgi);
             if (armor > 0f) info.damageTypes.ScaleAll(1f - armor);
-            if (Staff.HasWard(victim)) info.damageTypes.ScaleAll(Staff.WardDamageMult);
+            float ward = Staff.WardFactor(victim);
+            if (ward < 1f) info.damageTypes.ScaleAll(ward);
         }
 
         if (attacker != null && __instance is BaseCombatEntity)
@@ -324,7 +379,8 @@ public static class RPG_Gather
         BasePlayer p = info.InitiatorPlayer;
         if (p == null || p.IsNpc) return;
         PlayerData d = RPG.GetOrCreate(p);
-        RPG.AddXp(p, d, RPG.Config.xpPerGatherHit);
+        float gain = RPG.Config.xpPerGatherHit * (Skills.Has(d, "util_gather") ? 1.5f : 1f);
+        RPG.AddXp(p, d, gain);
     }
 }
 
@@ -375,6 +431,7 @@ public static class RPG_ManaTick
         else if (d.mana < maxMp)
         {
             float regen = (RPG.Config.manaRegenBase + d.intel * RPG.Config.manaRegenPerInt) * delta;
+        if (Skills.Has(d, "mage_flow")) regen *= 1.5f;
             d.mana = Mathf.Min(maxMp, d.mana + regen);
         }
         // HUD is updated in place (throttled). The /rpg window is NOT rebuilt per tick.

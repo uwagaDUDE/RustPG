@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0] - 2026-10-15
+### Added
+- Skill tree `/skills`: 12 nodes in 4 branches (General, Warrior, Hunter, Mage), one point every 5 levels (10 total)
+- Requirements per node: level, STR/AGI/INT, previous node. Unlock refuses with a reason; clicking a locked node shows it in chat
+- `/dash`: 12 m forward dash (requires Dash node), 10 s cooldown, stops at walls
+- Staff RMB opens the spell picker (`RustPG_Spell` window) instead of throwing
+- Skill effects: vitality (+25 HP), gather XP x1.5, melee +15%, lifesteal (+3 HP per melee hit), ranged +15%, crit (15% x1.5), fire bolt x1.5, fire blast splash, mana regen x1.5, heal x1.5, greater ward
+- Ward factor is now per-cast (duration and multiplier depend on the Greater Ward node)
+- Skill points are re-validated after level/XP/stat drops (`Skills.Validate`)
+- Shared CUI helper `Cui` for new windows (destroy-before-add, no trailing commas)
+
+### Notes
+- LMB melee hook is `BaseMelee.PlayerAttack`. The exact class of `wooden.spear` was not confirmed from the DLL; first in-game test decides it
+- RMB uses `ThrownWeapon.ServerThrow`
+
 ## [0.3.0] - 2026-10-15
 ### Added
 - Wooden Staff (`wooden.spear` marked `RPG Staff`): LMB casts, RMB throw blocked
