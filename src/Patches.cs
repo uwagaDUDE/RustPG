@@ -60,6 +60,18 @@ public static class RPG_Chat
             }
             return false;
         }
+        if (head == "/rpgadmin")
+        {
+            Network.Connection ac = null;
+            try { ac = __1.Connection; } catch (Exception) { }
+            if (!RPG.IsAdmin(player, ac))
+            {
+                player.ChatMessage("[RustPG] Admin only.");
+                return false;
+            }
+            AdminUI.Open(player);
+            return false;
+        }
         if (head == "/skills")
         {
             SkillsUI.Open(player, RPG.GetOrCreate(player));
@@ -337,7 +349,13 @@ public static class RPG_Console
             __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "", null);
             return false;
         }
-        __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "rpg: add/close/lang/xp/reset/spell/skill", null);
+        if (sub == "admin")
+        {
+            string rest = cmd.Length > 9 ? cmd.Substring(9).Trim() : "";
+            AdminUI.Handle(player, conn, rest, ref __result);
+            return false;
+        }
+        __result = new ConsoleSystem.CommandResult(ConsoleSystem.CommandResultType.Success, "rpg: add/close/lang/xp/reset/spell/skill/admin", null);
         return false;
     }
 }
@@ -444,6 +462,7 @@ public static class RPG_PlayerKill
 {
     static void Postfix(BasePlayer __instance, BasePlayer p)
     {
+        if (__instance != null) AdminUI.Close(__instance);
         if (p == null) return;
         BasePlayer killer = p;
         if (killer == __instance || killer.IsNpc) return;
@@ -477,6 +496,7 @@ public static class RPG_ManaTick
     {
         BasePlayer p = ownerEntity as BasePlayer;
         if (p == null || p.IsNpc) return;
+        if (p.IsDead()) { AdminUI.Close(p); return; }
         PlayerData d = RPG.GetOrCreate(p);
         float maxMp = RPG.MaxMana(d);
         if (maxMp <= 0f)

@@ -79,6 +79,19 @@ public static class RPG
         catch (Exception e) { BuddyApi.Log("config save error: " + e.Message); }
     }
 
+    public static void ReloadConfig()
+    {
+        string cfgPath = Path.Combine(DataDir, "config.json");
+        if (File.Exists(cfgPath))
+        {
+            try { Config = JsonConvert.DeserializeObject<RPGConfig>(File.ReadAllText(cfgPath)); }
+            catch (Exception e) { BuddyApi.Log("config reload error: " + e.Message); return; }
+        }
+        if (Config == null) Config = new RPGConfig();
+        if (Config.magic == null) Config.magic = new MagicConfig();
+        Config.magic.Validate();
+    }
+
     public static PlayerData GetOrCreate(BasePlayer p)
     {
         if (p == null) return null;

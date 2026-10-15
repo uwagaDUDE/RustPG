@@ -19,6 +19,7 @@ $refs = @(
     "/r:$rustbuddy\bin\RustBuddyLoader.dll",
     "/r:$game\Assembly-CSharp.dll",
     "/r:$game\Rust.Data.dll",
+    "/r:$game\Rust.Localization.dll",
     "/r:$game\Facepunch.UnityEngine.dll",
     "/r:$game\Facepunch.Network.dll",
     "/r:$game\Facepunch.Console.dll",

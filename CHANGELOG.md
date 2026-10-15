@@ -1,5 +1,17 @@
 ﻿# Changelog
 
+## [0.6.0] - 2026-10-15
+### Added
+- `/rpgadmin`: in-game admin menu, 7 sections (quick, items, entities, players, RustPG, commands, console)
+- Item catalog from the game (search, pages, 1/10/100/1000/stack), one-click give to the selected player
+- Entity spawn in one click (scientist, animals, barrels, crates, airdrop) + custom prefab path
+- Online players: select recipient, teleport to/bring, heal, staff, book, kill
+- RustPG actions for the selected player + `config.json` reload (`RPG.ReloadConfig`)
+- Server command catalog with search and one-click run; console with paged output, history (20, no passwords)
+- Client commands go to the admin's own client only (F1 limits apply)
+- Rights re-checked on every open and action; menu closes on death
+- `rpg.admin ...` console routing, `Cui.Input` helper, `Rust.Localization.dll` build reference
+
 ## [0.5.0] - 2026-10-15
 ### Added
 - Death Fog, Ice Ball, Ice Grip, Dragon Breath and Frost Breath; configurable magic balance.
